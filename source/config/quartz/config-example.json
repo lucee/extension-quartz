@@ -1,0 +1,46 @@
+{
+    "jobs": [
+        {
+            "label": "Example for every 1 seconds",
+            "url": "http://localhost:8888/jobs/dummy.cfm",
+            "interval": 60,
+            "startAt": "2021-04-22",
+            "endAt": "2028-04-22",
+            "pause": false
+        },
+        {
+            "label": "every 2 seconds",
+            "component": "org.lucee.extension.quartz.example.SimpleJobExample",
+            "cron": "0/2 * * * * ?",
+            "pause": false
+        },
+        {
+            "label": "Every 5 seconds, every minute, every hour between 09am and 17pm, of every day",
+            "url": "/jobs/dummy.cfm",
+            "cron": "0/5 * 9-17 * * ?",
+            "pause": true
+        },
+        {
+            "label": "Every 5 seconds, every minute, every hour between 09am and 17pm, of every work day",
+            "url": "/jobs/dummy.cfm",
+            "cron": "0/5 * 9-17 ? * MON-FRI",
+            "pause": true
+        }
+    ],
+    "listener": [
+        {
+            "component": "org.lucee.extension.quartz.ConsoleListener",
+            "stream": "err"
+        }
+    ],
+    "store": {
+        "type": "jdbc",
+        "datasource": "test",
+        "tablePrefix": "QRTZ_",
+        "driver": "com.mysql.cj.jdbc.Driver",
+        "url": "jdbc:mysql://localhost:3307/test?characterEncoding=UTF-8&serverTimezone=GMT&maxReconnects=3",
+        "username": "root",
+        "password": "redBat73",
+        "maxConnections": 5
+    }
+}
