@@ -1,9 +1,16 @@
 component {
+    // import java packages
+    import org.quartz.*;
+    import org.quartz.impl.*;
+    import org.quartz.impl.matchers.*;
+    import org.quartz.jobs.*;
+    import java.util.*;
+
 
     static {
         static.javaSettings = {
             "maven":[
-                {
+               {
                     "groupId" : "org.quartz-scheduler",
                     "artifactId" : "quartz-jobs",
                     "version" : "2.3.2"
@@ -40,28 +47,11 @@ component {
                 }
             ]
         };
-
-
-
-        static.bundleName="org.quartz-scheduler.quartz";
-        static.DateBuilder=createObject("java","org.quartz.DateBuilder",static.javaSettings);
-        static.SimpleScheduleBuilder=createObject("java","org.quartz.SimpleScheduleBuilder",static.javaSettings);
-        static.JobBuilder=createObject("java","org.quartz.JobBuilder",static.javaSettings);
-        static.TriggerBuilder=createObject("java","org.quartz.TriggerBuilder",static.javaSettings);
-        static.StdSchedulerFactory=createObject("java","org.quartz.impl.StdSchedulerFactory",static.javaSettings);
-        static.CronScheduleBuilder = createObject("java", "org.quartz.CronScheduleBuilder",static.javaSettings);
-        static.CronTrigger = createObject("java", "org.quartz.CronTrigger",static.javaSettings);
-        static.NoOpJob = createObject("java", "org.quartz.jobs.NoOpJob",static.javaSettings);
-        static.GroupMatcher = createObject("java", "org.quartz.impl.matchers.GroupMatcher",static.javaSettings);
-        static.TriggerState = createObject("java", "org.quartz.Trigger$TriggerState",static.javaSettings);
-        static.JobKey = createObject("java", "org.quartz.JobKey",static.javaSettings);
-        static.Job = createObject("java", "org.quartz.Job",static.javaSettings);
-        static.Properties = createObject("java", "java.util.Properties");
-        //static.ComboPooledDataSource = createObject("java", "com.mchange.v2.c3p0.ComboPooledDataSource",static.javaSettings);
-
+        
+        setJavaSettings(static.javaSettings);
         // Load URLJob and convert to a quartz Job class
         static.clazzURL=JavaCast("org.quartz.Job",new URLJob(),static.javaSettings).getClass(); 
-        
+       
         // Load ComponentJob and convert to a quartz Job class
         static.clazzCFC=JavaCast("org.quartz.Job",new ComponentJob(),static.javaSettings).getClass(); 
     }
@@ -69,7 +59,7 @@ component {
     variables.state="stopped";
 
     public void function init(string configFile) { 
-       
+
         // load config
         variables.configFile=expandPath(arguments.configFile);
         variables.config=deserializeJSON(fileRead(variables.configFile));
@@ -82,11 +72,12 @@ component {
     }
 
     public void function start() {
+        setJavaSettings(static.javaSettings);
         variables.state="starting";
         try {
 
             // Configure the scheduler properties programmatically
-            var props = static.Properties.init();
+            var props = new Properties();
             // props.put("org.quartz.scheduler.instanceName", instanceName);
             // props.put("org.quartz.scheduler.instanceId", "AUTO");
 
@@ -119,7 +110,7 @@ component {
                 }
             }
 
-            variables.factory = static.StdSchedulerFactory.init();
+            variables.factory = new StdSchedulerFactory();
             variables.factory.initialize(props);
             //dump(variables.factory.getLog());
             variables.scheduler = variables.factory.getScheduler();
@@ -189,6 +180,7 @@ component {
                         
                         continue;
                     }
+                    variables.scheduler.scheduleJob(job, trigger);
 
                     // change state of new jobs
                     if(jobData.pause?:false){
@@ -198,8 +190,6 @@ component {
                     
 
 
-
-                    variables.scheduler.scheduleJob(job, trigger);
                     log log=variables.logName type="debug" text="Quartz Scheduler: loaded job [#jobData.label#] with schedule [#jobData.cron?:("every "&jobData.interval&" second(s)")#]";
                 }
                 catch(ex) {
@@ -230,17 +220,18 @@ component {
 
 
     private function createJob(jobData) {
+        setJavaSettings(static.javaSettings);
         // URL Job
         if(!isNull(jobData.url)){
             jobData.id=hash(jobData.url,"quick"); // TODO make better
-            var builder = static.JobBuilder.newJob(static.clazzURL)
+            var builder = JobBuilder::newJob(static.clazzURL)
                 .withIdentity(jobData.id, "cfm")
                 .usingJobData("url", jobData.url);
         }
         // Component Job
         else if(!isNull(jobData.component) || !isNull(jobData.cfc)){
             jobData.id=hash(jobData.component?:jobData.cfc,"quick"); // TODO make better
-            var builder = static.JobBuilder.newJob(static.clazzCFC)
+            var builder = JobBuilder::newJob(static.clazzCFC)
                 .withIdentity(jobData.id, "cfm")
                 .usingJobData("component", jobData.component?:jobData.cfc);
         }
@@ -260,50 +251,51 @@ component {
         return builder
             .usingJobData("log", variables.logName)
             .usingJobData("label", jobData.label)
-            .build();
-        
+                        .build();
+                        
     }
 
     private function createTrigger(jobData) {
 
-        // define trigger
-        var builder=static.TriggerBuilder.newTrigger();
+                    // define trigger
+        var builder=TriggerBuilder::newTrigger();
 
-        // when to start?
-        if(!isNull(jobData.startAt)) {
-            builder.startAt(parseDateTime(jobData.startAt));
-        }
-        else builder.startNow();
+                    // when to start?
+                    if(!isNull(jobData.startAt)) {
+                        builder.startAt(parseDateTime(jobData.startAt));
+                    }
+                    else builder.startNow();
 
-        // when to end
-        if(!isNull(jobData.endAt)) {
-            builder.endAt(parseDateTime(jobData.endAt));
-        }
+                    // when to end
+                    if(!isNull(jobData.endAt)) {
+                        builder.endAt(parseDateTime(jobData.endAt));
+                    }
 
         // shedule interval
-        if(!isNull(jobData.interval)) {
+                    if(!isNull(jobData.interval)) {
                         
                         builder
                         .withIdentity(hash(jobData.id&":"&jobData.interval,"quick"), "cfm")
                         .withSchedule(
-                static.SimpleScheduleBuilder.simpleSchedule()
-                .withIntervalInSeconds(jobData.interval)
-                .repeatForever()
-            );
-        }
+                            SimpleScheduleBuilder::simpleSchedule()
+                            .withIntervalInSeconds(jobData.interval)
+                            .repeatForever()
+                        );
+                    }
         // shedule cron
-        else if(!isNull(jobData.cron)) {
+                    else if(!isNull(jobData.cron)) {
                         builder
                         .withIdentity(hash(jobData.id&":"&jobData.cron,"quick"), "cfm")
-                        .withSchedule(static.CronScheduleBuilder.cronSchedule(jobData.cron));
-        }
-        else {
+                        .withSchedule(CronScheduleBuilder::cronSchedule(jobData.cron));
+                    }
+                    else {
             throw "invalid job defintion [#serializeJSON(jobData)#], missing `cron` or `interval`";
         }
         return builder.build();
     }
 
 	public void function stop() {
+        setJavaSettings(static.javaSettings);
         
         if(isNull(variables.scheduler) || variables.scheduler.isShutdown() || variables.scheduler.isStarted()) {
             variables.state="stopped";
@@ -313,10 +305,10 @@ component {
 
         log log=variables.logName type="debug" text="Quartz Scheduler: stopping";
         try {
-        variables.state="stopping";
-        variables.scheduler.shutdown(true);
-        variables.scheduler=nullValue();
-        variables.state="stopped";
+            variables.state="stopping";
+            variables.scheduler.shutdown(true);
+            variables.scheduler=nullValue();
+            variables.state="stopped";
         }
         catch(e) {
             variables.state="error";
@@ -328,7 +320,7 @@ component {
         stop();
         start();
 	}
-
+    
 
 	package string function getScheduler() {
         return variables.scheduler;
@@ -349,7 +341,7 @@ component {
     private function actionOnJob(string action,name,string group) {
         // name can be a JobJey object or a string
         if(isSimpleValue(name)) {
-            local.jk=static.JobKey.init(name,group);
+            local.jk=new JobKey(name,group);
         }
         else {
             local.jk=name;
@@ -378,7 +370,7 @@ component {
 	public static array function getStates() {
         if(isNull(static.states)) {
             local.names=[];
-            loop array=static.TriggerState.values() item="local.enum" {
+            loop array=TriggerState::values() item="local.enum" {
                 arrayAppend(names, enum.name())
             }
             static.states=local.names;
@@ -388,21 +380,23 @@ component {
 
     
 
-    public function getJobs() {
+    public function getJobs() { 
+        setJavaSettings(static.javaSettings);
         var jobs = [];
         if(!isNull(variables.scheduler)) {
-            loop collection=variables.scheduler.getJobKeys(GroupMatcher.anyGroup()) index="local.i" item="local.key" {
+            loop collection=variables.scheduler.getJobKeys(GroupMatcher::anyGroup()) index="local.i" item="local.key" {
                 var job=variables.scheduler.getJobDetail(key);
                 if(!isNull(job)) arrayAppend(jobs, job);
             }
         }
         return jobs;
-    }
+	}
 
     public function getTriggers() {
+        setJavaSettings(static.javaSettings);
         var triggers = [];
         if(!isNull(variables.scheduler)) {
-            loop collection=variables.scheduler.getTriggerKeys(GroupMatcher.anyGroup()) index="local.i" item="local.key" {
+            loop collection=variables.scheduler.getTriggerKeys(GroupMatcher::anyGroup()) index="local.i" item="local.key" {
                 var trigger=variables.scheduler.getTrigger(key);
                 if(!isNull(trigger)) arrayAppend(triggers, trigger);
             }

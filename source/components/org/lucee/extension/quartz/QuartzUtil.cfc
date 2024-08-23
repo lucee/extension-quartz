@@ -149,6 +149,38 @@ component {
         return qry;
     }
 
+    public static function exportJobs(Quartz quartz) {
+        var triggers=quartz.getTriggers();
+        var jobs={};
+        loop array=quartz.getJobs() item="local.job" {
+            jobs[job.getKey().getName()]=job;
+        }
+
+        var arr=[];
+        loop array=triggers item="local.trigger" {
+            var sct=[:];
+            arrayAppend(arr, sct);
+            var job=jobs[trigger.getJobKey().getName()];
+            var dataMap=job.getJobDataMap();
+            var state=quartz.getScheduler().getTriggerState(trigger.getKey());
+            
+            sct["label"]=dataMap["label"];
+            if(structKeyExists(dataMap, "url")) sct["url"]=dataMap["url"];
+            else if(structKeyExists(dataMap, "component")) sct["component"]=dataMap["component"];
+            
+            if(structKeyExists(dataMap, "cron")) sct["cron"]=dataMap["cron"];
+            else if(structKeyExists(dataMap, "interval")) sct["interval"]=dataMap["interval"];
+
+            var time=trigger.getStartTime();
+            if(!isNull(time) && time>now()) sct["startAt"]= time;
+            var time=trigger.getEndTime()
+            if(!isNull(time) ) sct["endAt"]= time;
+            
+            sct["pause"]="PAUSED"==state.name();
+        }
+        return arr;
+    }
+
     public static function getJobsAsQuery(Quartz quartz, boolean extended=false) {
         var jobs=quartz.getJobs();
         var names=["label","name","group","url","component"];
