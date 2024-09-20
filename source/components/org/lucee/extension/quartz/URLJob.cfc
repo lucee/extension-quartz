@@ -13,7 +13,22 @@ component implementsJava="org.quartz.Job" {
             var label=dataMap.getString("label");
             
             log log=logName type="debug" text="calling url [#_url#] from job [#label?:""#]";
+            
+            if(left(_url,7)=="http://" || left(_url,8)=="https://") {
             http url=_url throwOnError=true result="local.res";
+            }
+            else {
+                var index=find("?", _url);
+                var template=index==0?_url:left(_url,index-1);
+                var qs=index==0?"":mid(_url,index+1);
+                var res=internalRequest(
+                    template:template,
+                    urls=qs,
+                    throwonerror:true);
+            }
+            
+            
+           
             if(res.status_code>=200 && res.status_code<300) {
                 log log=logName type="debug" text="successfully executed [#_url#]";
             }
@@ -22,7 +37,10 @@ component implementsJava="org.quartz.Job" {
             }
         }
         catch(e) {
+            e["timestamp"]=now();
+            dataMap["lastException"]=e;
             log log=logName type="error" exception=e;
+            rethrow;
         }
     }
 }

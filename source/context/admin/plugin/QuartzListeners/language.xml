@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<languages action="scheduler" position="5">
+	<language key="en">
+		<group>Quartz - Scheduler (Beta)</group>
+		<title>Listeners</title>
+<description>
+    The Quartz Job Scheduler is a powerful, open-source scheduler designed to schedule, manage, and execute jobs in a scalable and flexible environment. It supports clustered deployments, enabling high availability and load balancing across multiple nodes. Whether used for simple job scheduling or complex enterprise tasks, Quartz ensures reliable job execution in both standalone and distributed setups.
+</description>
+
+<custom key="purpose">
+Listeners in Quartz allow you to monitor and respond to key events in the scheduler's lifecycle, such as when a job is scheduled, triggered, completed, or misfires. They provide control over job execution, offering opportunities to log events, modify job behavior, or integrate with external systems.
+</custom>
+
+<custom key="pattern">
+Listener definitions must point to a component via a package path, implementing the following functions:
+```cfml
+public String function getName();
+public String function getDescription(); // optional
+public void   function jobToBeExecuted( context );
+public void   function jobExecutionVetoed( context );
+public void   function jobWasExecuted( context, jobException );
+```
+</custom>
+
+<custom key="listenerNotShared">
+In a Quartz cluster, listeners are not shared across nodes; they are local to each node and respond only to events occurring on that specific node.
+</custom>
+<custom key="descPath">
+Full name (inclusive) package to the component like: 
+`org.lucee.extension.quartz.ConsoleListener`
+</custom>
+<custom key="descArg">
+JSON struct containing the arguments you wanna pass into the constructor (init function) of the component. for the `ConsoleListener` this would look like this:
+
+`{ "stream" : "err" }`
+</custom>
+
+		<custom key="btnSubmit">Save</custom>
+		<custom key="btnResume">Resume</custom>
+		<custom key="btnPause">Pause</custom>
+		<custom key="btnDelete">Delete</custom>
+		<custom key="btnStop">Stop</custom>
+		<custom key="btnStart">Start</custom>
+		<custom key="btnRestart">Restart</custom>
+		<custom key="btnAdd">Add</custom>
+		<custom key="btnSet">Set</custom>
+		<custom key="btnAddUpdate">Add or Update</custom>
+	</language>
+</languages>

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<languages action="scheduler" position="5">
+	<language key="en">
+		<group>Quartz - Scheduler (Beta)</group>
+		<title>Overview</title>
+		<description>The Quartz Job Scheduler is a powerful, open-source scheduler for scheduling, managing, and executing jobs in a scalable and flexible environment. It supports clustered deployments, enabling high availability and load balancing across multiple nodes.</description>
+		<custom key="btnSubmit">Save</custom>
+		<custom key="btnResume">Resume</custom>
+		<custom key="btnPause">Pause</custom>
+		<custom key="btnDelete">Delete</custom>
+		<custom key="btnStop">Stop</custom>
+		<custom key="btnStart">Start</custom>
+		<custom key="btnRestart">Restart</custom>
+		<custom key="btnAdd">Add</custom>
+		<custom key="btnSet">Set</custom>
+		<custom key="btnAddUpdate">Add or Update</custom>
+	</language>
+</languages>

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<languages action="scheduler" position="5">
+	<language key="en">
+		<group>Quartz - Scheduler (Beta)</group>
+		<title>Storage</title>
+		<description>
+			The Quartz Job Scheduler is a powerful, open-source scheduler designed to schedule, manage, and execute jobs in a scalable and flexible environment. It supports clustered deployments, enabling high availability and load balancing across multiple nodes. Whether used for simple job scheduling or complex enterprise tasks, Quartz ensures reliable job execution in both standalone and distributed setups.
+		</description>
+
+<custom key="purpose">
+In Quartz, storage defines how jobs, triggers, and scheduling data are persisted across restarts and shared between nodes in a cluster. If you're running a single instance, Lucee automatically stores everything locally, and no additional configuration is needed. However, in a clustered setup, you must choose one of the available storage options. These options ensure data is reliably persisted, shared between nodes, and the workload is distributed across the cluster, enabling high availability, fault tolerance, and balanced job execution.
+</custom>
+
+<custom key="createYourStorage">
+Choose on of the following Storages with your configuration, you can use `${...}` as placeholder for enviroment variables.
+</custom>
+<custom key="modifyYourStorage">
+Make the necessary modifications to your storage, you can use `${...}` as placeholder for enviroment variables.
+</custom>
+
+<custom key="createYourStorageComment">
+Commented-out lines show optional parameters with default values. To customize, remove the `//` and set your value.
+</custom>
+
+<custom key="modifyYourStorageComment">
+You can also set another type than the current one here, whatever is supported works.
+</custom>
+
+
+<custom key="infoRedis">
+Redis storage provides a fast, in-memory solution for distributed and highly scalable job scheduling, ideal for clustered Quartz deployments.
+</custom>
+
+<custom key="infoJDBC">
+JDBC storage uses a relational database to persist job and trigger data, ensuring durability and compatibility with various database systems.
+</custom>
+
+	
+		<custom key="btnCreate">Create {type} Storage</custom>
+		<custom key="btnUpdate">Update Storage</custom>
+		<custom key="btnDelete">Remove Storage</custom>
+
+		
+	</language>
+</languages>

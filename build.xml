@@ -68,6 +68,7 @@ event-gateway-instance: "[{'cfcPath':'${cfc-path}','id':'${task-instance-name}',
         <include name="**/*.cfc"/>
       </fileset>
     </copy>
+
     <!-- this is necessary because of a bug in the lucee core -->
     <copy todir="${temp}/event-gateway">
       <fileset dir="${src}/event-gateways">
@@ -78,6 +79,12 @@ event-gateway-instance: "[{'cfcPath':'${cfc-path}','id':'${task-instance-name}',
     <!-- copy the web context -->
     <copy todir="${temp}/config">
       <fileset dir="${src}/config">
+        <include name="**/*.*"/>
+      </fileset>
+    </copy>
+
+    <copy todir="${temp}/context">
+      <fileset dir="${src}/context">
         <include name="**/*.*"/>
       </fileset>
     </copy>

@@ -2,12 +2,12 @@ component implementsJava="org.quartz.JobListener" {
     variables.stream="out";
 
     public String function init(properties) { 
-        variables.stream=properties.stream?:"out";
+        //variables.datasourceName=properties.datasource?:(properties.name);
     }
     
     public String function getName() { 
-        return "ConsoleListener";
-    }
+        return getComponentMetadata(this).fullname;
+    } 
 
     public String function getDescription() { 
         return "Logs all job execution details directly to the console, providing real-time feedback for monitoring and debugging purposes.";

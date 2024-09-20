@@ -20,7 +20,10 @@ component implementsJava="org.quartz.Job" {
             log log=logName type="debug" text="successfully invoked component [#cfcName#]";
         }
         catch(e) {
+            e["timestamp"]=now();
+            dataMap["lastException"]=e;
             log log=logName type="error" exception=e;
+            rethrow;
         }
     }
 }

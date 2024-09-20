@@ -1,4 +1,7 @@
-component {
+/**
+ * Helper functions that not depend on Quartz at all (static) or only depend on the public interface
+ */ 
+abstract component {
     
     /**
      * Converts a cron expression into a human-readable format.
@@ -94,10 +97,10 @@ component {
         return readable;
     }
 
-    public static function getTriggersAsQuery(Quartz quartz, boolean extended=false) {
-        var triggers=quartz.getTriggers();
+    public function getTriggersAsQuery( boolean extended=false) {
+        var triggers=this.getTriggers();
         var jobs={};
-        loop array=quartz.getJobs() item="local.job" {
+        loop array=this.getJobs() item="local.job" {
             jobs[job.getKey().getName()]=job;
         }
 
@@ -114,7 +117,7 @@ component {
             var row=queryAddRow(qry);
             var job=jobs[trigger.getJobKey().getName()];
             var dataMap=job.getJobDataMap();
-            var state=quartz.getScheduler().getTriggerState(trigger.getKey());
+            var state=this.getScheduler().getTriggerState(trigger.getKey());
             querySetCell(qry, "jobLabel", dataMap["label"]?:"",row);
             querySetCell(qry, "jobName", job.getName(),row);
             querySetCell(qry, "jobGroup", job.getGroup(),row);
@@ -149,20 +152,20 @@ component {
         return qry;
     }
 
-    public static function exportJobs(Quartz quartz, boolean extended=false) {
-        var triggers=quartz.getTriggers();
+    public function exportJobs(boolean extended=false) {
+        var triggers=getTriggers();
         var jobs={};
-        loop array=quartz.getJobs() item="local.job" {
+        loop array=getJobs() item="local.job" {
             jobs[job.getKey().getName()]=job;
         }
-
+        
         var arr=[];
         loop array=triggers item="local.trigger" {
             var sct=[:];
             arrayAppend(arr, sct);
             var job=jobs[trigger.getJobKey().getName()];
             var dataMap=job.getJobDataMap();
-            var state=quartz.getScheduler().getTriggerState(trigger.getKey());
+            var state=getScheduler().getTriggerState(trigger.getKey());
             if(extended) {
                 sct["name"]=trigger.getJobKey().getName();
                 sct["group"]=job.getGroup();
@@ -185,8 +188,8 @@ component {
         return arr;
     }
 
-    public static function exportJob(Quartz quartz, string name, string group) {
-        loop array=exportJobs(quartz, true) item="local.data" {
+    public function exportJob( string name, string group) {
+        loop array=exportJobs(true) item="local.data" {
             if(data.group==group && data.name==name) {
                 structDelete(data, "name");
                 structDelete(data, "group");
@@ -195,8 +198,8 @@ component {
         }
     }
 
-    public static function getJobsAsQuery(Quartz quartz, boolean extended=false) {
-        var jobs=quartz.getJobs();
+    public function getJobsAsQuery( boolean extended=false) {
+        var jobs=getJobs();
         var names=["label","name","group","url","component"];
         if(extended){
             arrayAppend(names, "dataMap");
@@ -224,17 +227,17 @@ component {
         return qry;
     }
 
-    public static function getJobsAsStruct(Quartz quartz) {
+    public function getJobsAsStruct() {
         var jobs=[:];
-        loop array=quartz.getJobs() item="local.job" {
+        loop array=getJobs() item="local.job" {
             jobs[job.getName()]=job;
         }
         return jobs;
     }
 
-    public static function getTriggerForJob(Quartz quartz, string name, string group, boolean extended=false) {
-        var triggers=getTriggersAsQuery( quartz, extended); 
-        var jobs=getJobsAsQuery( quartz, extended);
+    public static function getTriggerForJob(string name, string group, boolean extended=false) {
+        var triggers=getTriggersAsQuery(extended); 
+        var jobs=getJobsAsQuery(extended);
         var data=[:];
         loop query=triggers {
             if(name==triggers.jobName && group==triggers.jobGroup) {
@@ -252,8 +255,6 @@ component {
                 break;
             }
         }
-
-
         if(structCount(data)) return data;
         throw "no matching trigger found";
     }
@@ -281,9 +282,9 @@ component {
         return obj&"";
     }
 
-    public static function getMetadata(Quartz quartz) {
+    public function getMetadataAsStruct() {
         var meta=[:];
-        var raw=quartz.getMetadata();
+        var raw=this.getMetadata();
         if(!isNull(raw)) {
             // Get scheduler metadata
             //meta["raw"] = raw;
@@ -316,9 +317,9 @@ component {
         return true;
     }
 
-    public static function getListeners(quartz) {
-        var raw=quartz.getListeners();
-        var config=quartz.getConfig();
+    public function getListenersAsArray(boolean extended=false) {
+        var raw=getListeners();
+        var config=getConfig();
         
         var confListeners={};
         if(structKeyExists(config, "listener")) {
@@ -341,12 +342,22 @@ component {
                     desc=cfc.getDescription();
                 }
                 catch(e) {}
-                arrayAppend(listeners, {
-                    name:record.getName()
-                    ,path:path
-                    ,description:desc
-                    ,config:conf
-                });
+                if(extended) {
+                    arrayAppend(listeners, [
+                        "name":record.getName()
+                        ,"component":path
+                        ,"description":desc
+                        ,"config":conf
+                    ]);
+                }
+                else {
+                    var data=[:];
+                    data["component"]=path;
+                    loop struct=conf?:{} index="local.k" item="local.v" {
+                        data[k]=v;
+                    }
+                    arrayAppend(listeners, data);
+                }
             }
         }
         return listeners;

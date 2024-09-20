@@ -12,7 +12,7 @@ component extends="Gateway" {
 
     public function getCfcPath() { 
         pagePoolClear(); // this is a patch for a bug in Lucee, because Lucee follows the regular template cacheg rules for gateways, what is "once" by default.
-        return "org.lucee.extension.quartz.Quartz"; 
+        return "org.lucee.extension.quartz.QuartzGateway"; 
     }
 
 
