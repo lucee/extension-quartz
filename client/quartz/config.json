@@ -1,0 +1,30 @@
+{
+    "jobs": [
+        {
+            "label": "Example for every 1 seconds",
+            "url": "/jobs/dummy.cfm",
+            "interval": 1,
+            "startAt": "2021-04-22",
+            "endAt": "2028-04-22",
+            "pause": false
+        },
+        {
+            "label": "every 2 seconds",
+            "url": "/jobs/dummy.cfm",
+            "cron": "0/2 * * * * ?"
+        },
+        {
+            "label": "Every 5 seconds, every minute, every hour between 09am and 17pm, of every day",
+            "url": "/jobs/dummy.cfm",
+            "cron": "0/5 * 9-17 * * ?",
+            "pause": true
+        },
+        {
+            "label": "Every 5 seconds, every minute, every hour between 09am and 17pm, of every work day",
+            "url": "/jobs/dummy.cfm",
+            "cron": "0/5 * 9-17 ? * MON-FRI",
+            "pause": true
+        }
+    ],
+    "storage": {}
+}

@@ -1,0 +1,26 @@
+{
+    "tasks": [
+        {
+            "label": "Example for every 5 seconds",
+            "url": "/tasks/dummy.cfm",
+            "interval": 5,
+            "startDate": "2021-04-22",
+            "endDate": "2028-04-22"
+        },
+        {
+            "label": "every 5 seconds",
+            "url": "/tasks/dummy.cfm",
+            "cron": "0/5 * * * * ?"
+        },
+        {
+            "label": "Every 5 seconds, every minute, every hour between 09am and 17pm, of every day",
+            "url": "/tasks/dummy.cfm",
+            "cron": "0/5 * 9-17 * * ?"
+        },
+        {
+            "label": "Every 5 seconds, every minute, every hour between 09am and 17pm, of every work day",
+            "url": "/tasks/dummy.cfm",
+            "cron": "0/5 * 9-17 ? * MON-FRI"
+        }
+    ]
+}

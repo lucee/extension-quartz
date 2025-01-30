@@ -1,0 +1,147 @@
+/* Base Styles */
+html,
+body {
+    min-height: 450px;
+    height: 100%;
+}
+
+body {
+    min-width: 600px;
+    background-color: #e8e7ec;
+    background-repeat: no-repeat;
+    margin: 0;
+    padding: 20px 40px;
+    /* Add space: 20px top/bottom, 40px left/right */
+}
+
+body,
+td,
+th {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 12px;
+    color: #333;
+}
+
+.schedule-table {
+    width: 100%;
+    border-spacing: 3px;
+    border-collapse: separate;
+    margin-top: 20px;
+    background-color: #fff;
+    border-radius: 7px;
+}
+
+.schedule-table th {
+    background-color: #5f8731;
+    /* Same as .box background */
+    color: #ffffff;
+    font-weight: normal;
+    text-align: left;
+    padding: 5px 5px;
+    border: 1px solid #e8e7ec;
+    border-radius: 4px;
+}
+
+.schedule-table td {
+    padding: 3px 5px;
+    border: 1px solid #e8e7ec;
+    border-radius: 4px;
+    vertical-align: top;
+}
+
+/* Row Color Based on Job State */
+.schedule-table tr.normal {
+    background-color: #e0f3e6;
+    /* Green for NORMAL */
+}
+
+.schedule-table tr.paused {
+    background-color: #fff9da;
+    /* Yellow for PAUSED */
+}
+
+.schedule-table tr.error {
+    background-color: #f9e0e0;
+    /* Red for ERROR and BLOCKED */
+}
+
+.schedule-table tr.complete {
+    background-color: #ffffff;
+    /* White for COMPLETE */
+}
+
+/* Row Hover Effect */
+.schedule-table tr:hover {
+    background-color: #ddd;
+}
+
+.schedule-table th a {
+    color: #ffffff;
+    text-decoration: underline;
+}
+
+/* Button Styles */
+.btn {
+    display: inline-block;
+    outline: none;
+    text-align: center;
+    text-decoration: none;
+    padding: 6px 20px;
+    margin-left: 0;
+    width: auto;
+    overflow: visible;
+    border-radius: 5px;
+    font-weight: bold;
+    font-size: 11px;
+    color: #efede5;
+    border-width: 0;
+}
+
+.btn {
+    background: #5f8731;
+    /* Color for Pause Button */
+    box-shadow: 0px 2px 2px 0px #d9dade, 0px -2px 2px 0px #fcfcfc;
+    padding: 4px 8px 4px 8px;
+    min-width: 26px;
+}
+
+
+.schedule-table textarea {
+    width: 100%; /* Make textarea full width */
+    height: 100px; /* Set a fixed height for consistency */
+    resize: vertical; /* Allow vertical resizing */
+    box-sizing: border-box; /* Include padding/border in element's width and height */
+    margin-bottom: 10px; /* Space between textarea and button */
+}
+
+ .btn.add {
+    width: 100%; /* Make the add button full width */
+    background: #5f8731; /* Ensure the button color matches others */
+    color: #ffffff; /* Set text color to white */
+    padding: 10px; /* Increase padding for better button appearance */
+    border-radius: 5px; /* Rounded corners */
+    box-shadow: 0px 2px 2px 0px #d9dade, 0px -2px 2px 0px #fcfcfc; /* Consistent shadow */
+    margin-bottom: 10px; /* Space below the button */
+}
+
+.btn:hover:enabled {
+    color: white;
+    text-decoration: none;
+}
+
+.btn:active:enabled {
+    color: #5f8731;
+    position: relative;
+    top: 1px;
+}
+
+.comment {
+    font-size: 12px; /* Smaller font size to make it look like a note */
+    color: #666; /* Grey color for less emphasis */
+    margin-top: 10px; /* Space above the comment */
+    line-height: 1.4; /* Improve readability */
+    background-color: #f9f9f9; /* Light background for contrast */
+    padding: 10px; /* Padding around the comment */
+    border-radius: 5px; /* Rounded corners */
+    border: 1px solid #ddd; /* Light border */
+}
