@@ -64,7 +64,7 @@ component extends="QuartzSupport" javaSettings='{
 		_init(configFile, variables);
     }
 
-	private static void function _init(string configFile, struct result) { 
+	public static void function _init(string configFile, struct result) { 
         // load config
         result.configFile=expandPath(arguments.configFile);
         result.configUntranslated = deserializeJSON(fileRead(result.configFile));
@@ -73,7 +73,7 @@ component extends="QuartzSupport" javaSettings='{
         log log=result.logName type="debug" text="Quartz Scheduler: loaded config file [#result.configFile#]";
     }
 
-    public void function start() {
+    public void function start(boolean readJobs=false) {
         lock name="quartz-scheduler" {
             variables.state="starting";
             try {
@@ -90,7 +90,7 @@ component extends="QuartzSupport" javaSettings='{
 
                 props.put("org.quartz.threadPool.threadsInheritContextClassLoaderOfInitializingThread", "true");
                 
-                var hasStore=false;
+                var hasStore=readJobs;
                 // store
                 if(!isNull(variables.config.store.type)) {
                     
@@ -135,9 +135,9 @@ component extends="QuartzSupport" javaSettings='{
                 variables.scheduler = variables.factory.getScheduler();
 
                 // load listeners
-                if(!isNull(config.listener)) {
+                if(!isNull(config.listeners)) {
                     var existingListener=getListeners(true);
-                    loop array=config.listener item="local.listenerData" {
+                    loop array=config.listeners item="local.listenerData" {
                         try {
                             loadListener(listenerData,existingListener);
                         }
@@ -169,34 +169,84 @@ component extends="QuartzSupport" javaSettings='{
                 rethrow;
             }
         }
+
+        thread cfc=this logName=variables.logName {
+            while(true) {
+                var state=cfc.getState();
+                if("running"!=state && "starting"!=state) break;
+                try {
+                    systemOutput("-----------------------",1,1);
+                    var configFile=getPageContext().getConfig().getDeployDirectory().getReal("config.quartz");
+                    if(fileExists(configFile)) {
+                        systemOutput("---------  found #now()# ---------",1,1);
+                        
+                        // load the data
+                        var newData=deserializeJSON(fileRead(configFile));
+                         
+                        // add jobs
+                        loop array=newData.jobs?:[] item="job" {
+                            cfc.addJob(job);
+                        }
+
+                        // add listeners
+                        loop array=newData.listeners?:[] item="listener" {
+                            systemOutput(listener,1,1);
+                            cfc.addListener(listener);
+                        }
+
+                        // change store, this actually need a restart
+                        if(!isNull(newData.store)) {
+                            systemOutput("---------  store #now()# ---------",1,1);
+                            // TODO 
+                            // var existingData=deserializeJSON(fileRead(cfc.getConfigFile()));
+                            cfc.stop();
+                            cfc.sendMessageStatic(cfc.getConfigFile(),{
+                                "action":"updatestore"
+                                ,"store":serializeJSON(newData.store)
+                            });
+                            if(fileExists(configFile)) fileDelete(configFile); // make sure the new startup does not pick up that file
+                            cfc.start();
+                        }
+                        if(fileExists(configFile)) fileDelete(configFile);
+                        systemOutput("---------  done #now()# ---------",1,1);
+                    }
+                }
+                catch(e) {
+                    systemOutput(e,1,1);
+                    log log=state type="error" exception=e;
+                }
+                sleep(10000);
+            }
+        }
+        systemOutput("++++++++",1,1);
 	}
 
     public function addListener(listenerData) {
         var existingListener = getListeners(true);
         loadListener(listenerData, existingListener);
 
-        var listener=configUntranslated.listener?:nullValue();
-        if(isNull(listener)) local.listener=configUntranslated["listener"]=[];
+        var listeners=configUntranslated.listeners?:nullValue();
+        if(isNull(listeners)) local.listeners=configUntranslated["listeners"]=[];
         
         // update
         var insert=true;
-        loop array=listener index="local.i" item="local.data" {
+        loop array=listeners index="local.i" item="local.data" {
             if(data.component==listenerData.component) {
-                listener[i]=listenerData;
+                listeners[i]=listenerData;
                 insert=false;
                 break;
             }
         }
 
         // insert
-        if(insert) arrayAppend(listener, listenerData);
+        if(insert) arrayAppend(listeners, listenerData);
         sync();
     }
 
     private function sync(boolean async=false) {
         var data=[:];
         data["jobs"]=exportJobs();
-        data["listener"]=variables.configUntranslated.listener?:[];
+        data["listeners"]=variables.configUntranslated.listeners?:[];
         data["store"]=variables.configUntranslated.store?:{};
         variables.configUntranslated=data;
         variables.config = resolveEnvVar(data);
@@ -480,17 +530,17 @@ component extends="QuartzSupport" javaSettings='{
     public boolean function deleteListener(name) {
         if(isNull(variables.scheduler)) return false;
         var manager=variables.scheduler.getListenerManager();
-        var listener=manager.getJobListener(name);
-        if (!isNull(listener)) {
-            var cfc=listener._toComponent();
+        var listeners=manager.getJobListener(name);
+        if (!isNull(listeners)) {
+            var cfc=listeners._toComponent();
             var path=getMetaData(cfc).fullname;
             manager.removeJobListener(name);
             
-            var listener=configUntranslated.listener?:nullValue();
-            if(!isNull(listener)) {
-                for(var i=len(listener);i>0;i--) {
-                    if(listener[i].component==path) {
-                        arrayDeleteAt(listener, i);
+            var listeners=configUntranslated.listeners?:nullValue();
+            if(!isNull(listeners)) {
+                for(var i=len(listeners);i>0;i--) {
+                    if(listeners[i].component==path) {
+                        arrayDeleteAt(listeners, i);
                         break;
                     }
                 }
@@ -599,14 +649,16 @@ component extends="QuartzSupport" javaSettings='{
             Quartz::store(configFile,internalData.configUntranslated);
             return strStore;
 		}
-
-
-
 		return "";
 	}
+
     public function getMetadata() {
         if(!isNull(variables.scheduler)) {
             return variables.scheduler.getMetaData();
         }
+	}
+
+    public function getConfigFile() {
+        return variables.configFile;
 	}    
 }
