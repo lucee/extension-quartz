@@ -546,10 +546,12 @@ component extends="QuartzSupport" javaSettings='{
 
     public function resumeJob(name,string group) {
         actionOnJob("resumeJob",name,group?:nullValue());
+        sync();
 	} 
 
 	public function pauseJob(name,string group) {
         actionOnJob("pauseJob",name,group?:nullValue());
+        sync();
 	} 
 
     private function actionOnJob(string action,name,string group) {
