@@ -1,4 +1,4 @@
-component extends="lucee.admin.plugin.Plugin" {
+component extends="org.lucee.extension.quartz.QuartzPlugin" {
 	
 	variables.gatewayName="quartz-task";
 	
@@ -10,38 +10,46 @@ component extends="lucee.admin.plugin.Plugin" {
 	}
 
 	public function overview(struct lang, struct app, struct req) {
-		variables.state=GatewayState(variables.gatewayName);
-		if("running"==variables.state) {
-			variables.quartz=getQuartz(variables.gatewayName);
-			variables.jobs = variables.quartz.getTriggersAsQuery(false);
-			variables.meta = variables.quartz.getMetadataAsStruct();
-			
-			if(structKeyExists(url, "jobGroup") && structKeyExists(url, "jobName")) {
-				try {
-					data=variables.quartz.exportJob(url.jobName,url.jobGroup);
-					variables.editval=serializeJSON(var:data,compact:false);
-				}
-				catch(e) {}
-			}
-		}
+		try { 
+            variables.state=GatewayState(variables.gatewayName);
+            if("running"==variables.state) {
+                variables.quartz=getQuartz(variables.gatewayName);
+                variables.jobs = variables.quartz.getTriggersAsQuery(false);
+                variables.meta = variables.quartz.getMetadataAsStruct();
+                
+                if(structKeyExists(url, "jobGroup") && structKeyExists(url, "jobName")) {
+                    try {
+                        var data=variables.quartz.exportJob(url.jobName,url.jobGroup);
+                        variables.editval=serializeJSON(var:data,compact:false);
+                    }
+                    catch(e) {}
+                }
+            }
+        }
+        catch(cfcatch) {
+            handleException(lang, app, req, cfcatch);
+        }
 	}
 
 	public function update(struct lang, struct app, struct req) {
-
-		
-		// stop
-		if(structKeyExists(form, "stop")) {
-			GatewayAction(variables.gatewayName,"stop",true);
-		}
-		// start
-		else if(structKeyExists(form, "start")) {
-			GatewayAction(variables.gatewayName,"start",true);
-		}
-		// restart
-		else if(structKeyExists(form, "restart")) {
-			GatewayAction(variables.gatewayName,"stop",true);
-			GatewayAction(variables.gatewayName,"start",true);
-		}
+        try { 
+            // stop
+            if(structKeyExists(form, "stop")) {
+                GatewayAction(variables.gatewayName,"stop",true);
+            }
+            // start
+            else if(structKeyExists(form, "start")) {
+                GatewayAction(variables.gatewayName,"start",true);
+            }
+            // restart
+            else if(structKeyExists(form, "restart")) {
+                GatewayAction(variables.gatewayName,"stop",true);
+                GatewayAction(variables.gatewayName,"start",true);
+            }
+        }
+        catch(cfcatch) {
+            handleException(lang, app, req, cfcatch);
+        }
 		return "redirect:overview";
 	}
 	

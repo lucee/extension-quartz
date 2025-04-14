@@ -57,12 +57,19 @@
 				else xhr.send("name=" + encodeURIComponent(jobName) + "&group=" + encodeURIComponent(jobGroup)+ "&action=" + encodeURIComponent(action));
 			}
 		</script>
+		<cfset exceptionKey="expection"&(req.plugin?:"")>
+		<cfif structKeyExists(session,exceptionKey)>
+			<div class="error">
+				<b>#session[exceptionKey].message#</b><br>
+				<cfif len(session[exceptionKey].detail?:"")>#session[exceptionKey].detail?:""#</cfif>
 		
-	
+				<cfset structDelete(session,exceptionKey)>
+			</div>
+		</cfif>
 
 	<form  action="#action('update')#" method="post">
 	<cfoutput>
-		<h1>Status (#state#)</h1>
+		<br><h4>Status (#state#)</h4></br>
 		<cfif state EQ "running">
 			Stop local representation of the Quartz Scheduler, that does not affect other server sharing the same job storage.
 		<cfelseif state EQ "stopped">
@@ -85,7 +92,7 @@
 	</cfoutput>
 	</form>
 <cfif not isNull(quartz)>
-		<cfoutput><h1>Info</h1>
+		<cfoutput><h2>Info</h2>
 		<table class="maintbl checkboxtbl">
 		   <thead>
 			   <tr>

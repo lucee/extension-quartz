@@ -59,12 +59,20 @@
 				else xhr.send("name=" + encodeURIComponent(jobName) + "&group=" + encodeURIComponent(jobGroup)+ "&action=" + encodeURIComponent(action));
 			}
 		</script>
+	<cfset exceptionKey="expection"&(req.plugin?:"")>
+	<cfif structKeyExists(session,exceptionKey)>
+		<div class="error">
+			<b>#session[exceptionKey].message#</b><br>
+			<cfif len(session[exceptionKey].detail?:"")>#markdownToHTML(session[exceptionKey].detail?:"")#</cfif>
 		
+			<cfset structDelete(session,exceptionKey)>
+		</div>
+	</cfif>
 	<cfif isNull(quartz)>
 		<cfif state EQ "running">
-			<p class="important">Quartz cannot be loaded for unknown reasons, check the logs for details.</p>
+			<div class="error">Quartz cannot be loaded for unknown reasons, check the logs for details.</div>
 		<cfelseif state EQ "stopped">
-			<p class="important">Quartz Scheduler is not running.</p>
+			<div class="error">Quartz Scheduler is not running.</div>
 			
 			<cfoutput>
 			<form  action="#action('update')#" method="post">
@@ -87,7 +95,7 @@
 		</cfif>
 		
 	<cfelse>
-		<cfoutput><h1>Jobs</h1></cfoutput>
+		<cfoutput><h2>Jobs</h2></cfoutput>
 
 
 		<form  action="#action('update')#" method="post">
@@ -130,12 +138,14 @@
 					<input class="br submit" type="submit" name="delete" value="#lang.btnDelete#" />
 				</td>
 				<td colspan="3" align="right">
-					<table>
-						<tr>
-							<td style="background-color:##e0f3e6;">&nbsp;&nbsp;Active&nbsp;&nbsp;</td>
-							<td style="background-color:##fff9da;">&nbsp;&nbsp;Paused&nbsp;&nbsp;</td>
-							<td style="background-color:##f9e0e0;">&nbsp;&nbsp;Error&nbsp;&nbsp;</td>
-						</tr>
+					<table class="maintbl">
+						<tbody>
+							<tr>
+								<td class="OK">&nbsp;&nbsp;Active&nbsp;&nbsp;</td>
+								<td class="tblContentYellow">&nbsp;&nbsp;Paused&nbsp;&nbsp;</td>
+								<td class="notOK">&nbsp;&nbsp;Error&nbsp;&nbsp;</td>
+							</tr>
+						</tbody>
 					</table>
 				</td>
 				</tr>
@@ -143,7 +153,7 @@
 		</table>
 
 
-	<cfoutput><h1>Create or Edit Job</h1></cfoutput>
+	<cfoutput><h2>Create or Edit Job</h2></cfoutput>
 	<table class="maintbl checkboxtbl">
 		<tr>
 			<tr>

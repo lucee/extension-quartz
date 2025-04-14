@@ -58,12 +58,21 @@
 				else xhr.send("name=" + encodeURIComponent(jobName) + "&group=" + encodeURIComponent(jobGroup)+ "&action=" + encodeURIComponent(action));
 			}
 		</script>
+	
 	<p>#lang.purpose#</p>
 
 	<cfif hasStorage>	
 		<h2>Modify your Storage</h2>
 		<p>#lang.modifyYourStorage#</p>
-	
+		<cfset exceptionKey="expection"&(req.plugin?:"")>
+		<cfif structKeyExists(session,exceptionKey)>
+			<div class="error">
+				<b>#session[exceptionKey].message#</b><br>
+				<cfif len(session[exceptionKey].detail?:"")>#markdownToHtml(session[exceptionKey].detail?:"")#</cfif>
+		
+				<cfset structDelete(session,exceptionKey)>
+			</div>
+		</cfif>
 		<form  action="#action('update')#" method="post">
 			<table class="maintbl checkboxtbl">	
 			<tr>
@@ -91,15 +100,28 @@
 	<cfelse>	
 		<h2>Choose a Storage</h2>
 		<p>#lang.createYourStorage#</p>
+
+		<cfset exceptionKey="expection"&(req.plugin?:"")>
 		<cfloop struct="#variables.storages#" index="k" item="v">
 			<cfif hasStorage and k NEQ variables.storageLoaded.type><cfcontinue></cfif>
-	
+			<cfset title=lang[k&"Title"]>
+			
+			<cfif structKeyExists(session,exceptionKey) && (session[exceptionKey].dataType?:"") EQ k>
+				<div class="error">
+					<b>#session[exceptionKey].message#</b><br>
+					<cfif len(session[exceptionKey].detail?:"")>#markdownToHtml(session[exceptionKey].detail?:"")#</cfif>
+			
+					<cfset structDelete(session,exceptionKey)>
+				</div>
+			</cfif>
+			
+			
 			<form  action="#action('update')#" method="post">
 			<table class="maintbl checkboxtbl">	
 			<tr>
 				<th>
-					<h3>#k#</h3>
-					#lang["info"&k]#
+					<h3>#title#</h3>
+					#lang[k&"Desc"]#
 				</th>
 			</tr>
 			<tr>
@@ -112,10 +134,10 @@
 			<tr>
 				<td colspan="1">
 					<cfif hasStorage>
-						<input class="b submit" type="submit" name="update" value="#replace(lang.btnUpdate,"{type}",k)#" />  
-						<input class="b submit" type="submit" name="delete" value="#replace(lang.btnDelete,"{type}",k)#" />  	
+						<input class="b submit" type="submit" name="update" value="#replace(lang.btnUpdate,"{type}",title)#" />  
+						<input class="b submit" type="submit" name="delete" value="#replace(lang.btnDelete,"{type}",title)#" />  	
 					<cfelse>
-						<input class="b submit" type="submit" name="create" value="#replace(lang.btnCreate,"{type}",k)#" />  
+						<input class="b submit" type="submit" name="create" value="#replace(lang.btnCreate,"{type}",title)#" />  
 					</cfif> 
 					<div class="comment"></div>
 				</td>
@@ -127,13 +149,4 @@
 
 
 	</cfif>
-
-		
-		
-		
-
-
-	
-
-
 </cfoutput>

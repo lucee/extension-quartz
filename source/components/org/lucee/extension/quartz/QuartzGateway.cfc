@@ -9,6 +9,11 @@ component {
         
         variables.configFile=expandPath(path);
         if(!fileExists(variables.configFile)) {
+            // make sure parent directory exists
+            var dir=getDirectoryFromPath(variables.configFile);
+            if(!directoryExists(dir)) {
+                directoryCreate(dir,true,true);
+            }
             fileWrite(variables.configFile, '{
     "jobs": [
         /*{

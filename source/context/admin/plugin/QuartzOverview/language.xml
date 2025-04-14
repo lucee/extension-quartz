@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<languages action="scheduler" position="5">
+<languages action="scheduler" position="5" index="1">
 	<language key="en">
 		<group>Quartz - Scheduler (Beta)</group>
 		<title>Overview</title>

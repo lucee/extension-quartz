@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<languages action="scheduler" position="5">
+<languages action="scheduler" position="5" index="4">
 	<language key="en">
 		<group>Quartz - Scheduler (Beta)</group>
 		<title>Storage</title>
@@ -26,12 +26,13 @@ Commented-out lines show optional parameters with default values. To customize, 
 You can also set another type than the current one here, whatever is supported works.
 </custom>
 
-
-<custom key="infoRedis">
+<custom key="redisTitle">Redis</custom>
+<custom key="redisDesc">
 Redis storage provides a fast, in-memory solution for distributed and highly scalable job scheduling, ideal for clustered Quartz deployments.
 </custom>
 
-<custom key="infoJDBC">
+<custom key="datasourceTitle">Datasource</custom>
+<custom key="datasourceDesc">
 JDBC storage uses a relational database to persist job and trigger data, ensuring durability and compatibility with various database systems.
 </custom>
 

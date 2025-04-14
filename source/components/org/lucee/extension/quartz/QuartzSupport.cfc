@@ -320,16 +320,15 @@ abstract component {
     public function getListenersAsArray(boolean extended=false) {
         var raw=getListeners();
         var config=getConfig();
-        
+       
         var confListeners={};
-        if(structKeyExists(config, "listener")) {
-            loop array=config.listener item="local.l" {
+        if(structKeyExists(config, "listeners")) {
+            loop array=config.listeners item="local.l" {
                 var tmp=duplicate(l);
                 structDelete(tmp, "component",false);
                 confListeners[l.component?:""]=tmp;
             }
         }
-        
         var listeners=[];
         if(!isNull(raw)) {
             loop array=raw item="local.record" {

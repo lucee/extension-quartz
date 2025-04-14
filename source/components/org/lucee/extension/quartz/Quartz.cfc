@@ -56,6 +56,9 @@ component extends="QuartzSupport" javaSettings='{
        
         // Load ComponentJob and convert to a quartz Job class
         static.clazzCFC=JavaCast("org.quartz.Job",new ComponentJob()).getClass(); 
+
+        // Load ConnectionProvider
+        static.connProvName=JavaCast("org.quartz.utils.ConnectionProvider",new ConnectionProviderImpl()).getClass().getName(); 
     }
 
     variables.state="stopped";
@@ -94,8 +97,31 @@ component extends="QuartzSupport" javaSettings='{
                 // store
                 if(!isNull(variables.config.store.type)) {
                     
-                    // JDBC
-                    if("jdbc"==variables.config.store.type) {
+                    // Datasource
+                    if("datasource"==variables.config.store.type) {
+                        var ds = variables.config.store.datasource;
+                        systemOutput("Configuring Quartz with Lucee datasource: " & ds, 1, 1);
+                        
+                        // Configure JDBC job store with Lucee datasource
+                        props.put("org.quartz.jobStore.class", "org.quartz.impl.jdbcjobstore.JobStoreTX");
+                        props.put("org.quartz.jobStore.driverDelegateClass", "org.quartz.impl.jdbcjobstore.StdJDBCDelegate");
+                        props.put("org.quartz.jobStore.dataSource", asString(ds));
+                        props.put("org.quartz.jobStore.tablePrefix", asString(trim(variables.config.store.tablePrefix?:"QRTZ_")));
+                        props.put("org.quartz.jobStore.isClustered", asString(variables.config.store.cluster?:true));
+                        props.put("org.quartz.jobStore.clusterCheckinInterval", asString(trim(variables.config.store.clusterCheckinInterval?:"15000")));
+                        
+                        // Use our ConnectionProvider implementation for Lucee datasources
+                        props.put("org.quartz.dataSource." & ds & ".connectionProvider.class", static.connProvName);
+                        props.put("org.quartz.dataSource." & ds & ".datasource", asString(ds));
+                        props.put("org.quartz.dataSource." & ds & ".log", asString(variables.logName));
+                        
+                        // TODO Optional credentials if specified
+                        //if(!isNull(variables.config.store.username)) props.put("org.quartz.dataSource." & ds & ".username", asString(variables.config.store.username));
+                        //if(!isNull(variables.config.store.password)) props.put("org.quartz.dataSource." & ds & ".password", asString(variables.config.store.password));
+                        hasStore = true;
+                        log log=variables.logName type="info" text="Quartz Scheduler: configured with Lucee datasource [#ds#]";
+                    }
+                    else if("jdbc"==variables.config.store.type) {
                         var ds=variables.config.store.datasource;
                         // Configure JDBC job store
                         props.put("org.quartz.jobStore.class", "org.quartz.impl.jdbcjobstore.JobStoreTX");
@@ -178,17 +204,19 @@ component extends="QuartzSupport" javaSettings='{
                     systemOutput("-----------------------",1,1);
                     var configFile=getPageContext().getConfig().getDeployDirectory().getReal("config.quartz");
                     if(fileExists(configFile)) {
-                        systemOutput("---------  found #now()# ---------",1,1);
+                        systemOutput("---------  found new config #now()# ---------",1,1);
                         
                         // load the data
                         var newData=deserializeJSON(fileRead(configFile));
                          
                         // add jobs
+                        systemOutput("---------  found #len(newData.jobs?:[])# job(s) ---------",1,1);
                         loop array=newData.jobs?:[] item="job" {
                             cfc.addJob(job);
                         }
 
                         // add listeners
+                        systemOutput("---------  found #len(newData.listeners?:[])# listener(s) ---------",1,1);
                         loop array=newData.listeners?:[] item="listener" {
                             systemOutput(listener,1,1);
                             cfc.addListener(listener);
@@ -205,6 +233,7 @@ component extends="QuartzSupport" javaSettings='{
                                 ,"store":serializeJSON(newData.store)
                             });
                             if(fileExists(configFile)) fileDelete(configFile); // make sure the new startup does not pick up that file
+                            cfc.init(cfc.getConfigFile());
                             cfc.start();
                         }
                         if(fileExists(configFile)) fileDelete(configFile);
@@ -255,6 +284,10 @@ component extends="QuartzSupport" javaSettings='{
 
     public static void function store(configFile,data) {
         fileWrite(configFile,serializeJSON(var:data,compact:false));
+        //systemOutput(configFile,1,1);
+        //systemOutput(serializeJSON(var:data,compact:false),1,1);
+        //systemOutput("<print-stack-trace>",1,1);
+            
     }
 
     /**
@@ -644,8 +677,12 @@ component extends="QuartzSupport" javaSettings='{
 			var store=deserializeJSON(strStore);
             if(!isStruct(store)) throw "store need to be a struct";
             internalData.configUntranslated["store"]=store;
+            systemOutput("*******************************************",1,1);
             systemOutput(store,1,1);
-            systemOutput(internalData,1,1);
+            systemOutput(serializeJSON(var:store,compact:false),1,1);
+            systemOutput("...........................................",1,1);
+            systemOutput(serializeJSON(var:internalData.configUntranslated,compact:false),1,1);
+            systemOutput("*******************************************",1,1);
             Quartz::store(configFile,internalData.configUntranslated);
             return strStore;
 		}
@@ -660,5 +697,5 @@ component extends="QuartzSupport" javaSettings='{
 
     public function getConfigFile() {
         return variables.configFile;
-	}    
+	}
 }

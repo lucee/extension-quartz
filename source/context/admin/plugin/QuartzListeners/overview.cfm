@@ -63,9 +63,9 @@
 
 <cfif isNull(quartz)>
 	<cfif state EQ "running">
-		<p class="important">Quartz cannot be loaded for unknown reasons, check the logs for details.</p>
+		<div class="error">Quartz cannot be loaded for unknown reasons, check the logs for details.</div>
 	<cfelseif state EQ "stopped">
-		<p class="important">Quartz Scheduler is not running.</p>
+		<div class="error">Quartz Scheduler is not running.</div>
 		
 		<cfoutput>
 		<form  action="#action('update')#" method="post">
@@ -88,7 +88,7 @@
 	</cfif>
 	
 <cfelse>
-		<cfoutput><h1>Listeners</h1></cfoutput>
+		<cfoutput><h2>Listeners</h2></cfoutput>
 
 		<form  action="#action('update')#" method="post">
 		<cfif len(listeners)>
@@ -127,7 +127,16 @@
 		<p>No listeners defined</p>
 		</cfif>
 
-	<cfoutput><h1>Create or Edit Listener</h1></cfoutput>
+	<cfoutput><h2>Create or Edit Listener</h2></cfoutput>
+	<cfset exceptionKey="expection"&(req.plugin?:"")>
+	<cfif structKeyExists(session,exceptionKey)>
+		<div class="error">
+			<b>#session[exceptionKey].message#</b><br>
+			<cfif len(session[exceptionKey].detail?:"")>#markdownToHTML(session[exceptionKey].detail?:"")#</cfif>
+	
+			<cfset structDelete(session,exceptionKey)>
+		</div>
+	</cfif>
 	<table class="maintbl checkboxtbl">
 		<tbody>
 			<tr>
