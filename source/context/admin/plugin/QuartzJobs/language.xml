@@ -11,6 +11,7 @@
 		<custom key="btnStop">Stop</custom>
 		<custom key="btnStart">Start</custom>
 		<custom key="btnRestart">Restart</custom>
+		<custom key="btnRefresh">Refresh</custom>
 		<custom key="btnAdd">Add</custom>
 		<custom key="btnSet">Set</custom>
 		<custom key="btnAddUpdate">Add or Update</custom>

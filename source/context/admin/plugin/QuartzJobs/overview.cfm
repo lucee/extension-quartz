@@ -132,12 +132,12 @@
 			</tbody>
 			<tfoot>
 				<tr>
-				<td colspan="2">
+				<td colspan="3">
 					<input class="bl submit" type="submit" name="pause" value="#lang.btnPause#" />
 					<input class="bm submit" type="submit" name="resume" value="#lang.btnResume#" />
 					<input class="br submit" type="submit" name="delete" value="#lang.btnDelete#" />
 				</td>
-				<td colspan="3" align="right">
+				<td colspan="2" align="right">
 					<table class="maintbl">
 						<tbody>
 							<tr>
@@ -151,8 +151,7 @@
 				</tr>
 			</tfoot>
 		</table>
-
-
+		<input class="b submit" type="button" name="refresh" value="#lang.btnRefresh#" style="width:100%" onclick="window.location.reload();" />
 	<cfoutput><h2>Create or Edit Job</h2></cfoutput>
 	<table class="maintbl checkboxtbl">
 		<tr>
