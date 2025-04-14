@@ -126,6 +126,8 @@ component extends="org.lucee.extension.quartz.QuartzPlugin" {
 					,"store":updateData
 				});
 			}
+			GatewayAction(variables.gatewayName,"stop",true);
+			GatewayAction(variables.gatewayName,"start",true);
 		}
 		catch(cfcatch) {
 			cfcatch.dataType=data.type?:"";
