@@ -96,9 +96,10 @@
 		
 	<cfelse>
 		<cfoutput><h2>Jobs</h2></cfoutput>
+		
 
-
-		<form  action="#action('update')#" method="post">
+	<form  action="#action('update')#" method="post">
+		<cfif jobs.recordcount>
 		<table class="maintbl checkboxtbl">
 			<thead>
 				<tr>
@@ -152,7 +153,13 @@
 			</tfoot>
 		</table>
 		<input class="b submit" type="button" name="refresh" value="#lang.btnRefresh#" style="width:100%" onclick="window.location.reload();" />
-	<cfoutput><h2>Create or Edit Job</h2></cfoutput>
+	<cfelse>
+		<p>#lang.noJobs#</p>
+	</cfif>
+	<cfoutput>
+		<h2>#jobs.recordcount?lang.addUpdateTitle:lang.addTitle#</h2>
+		<p>#jobs.recordcount?lang.addUpdateDesc:lang.addDesc#</p>
+	</cfoutput>
 	<table class="maintbl checkboxtbl">
 		<tr>
 			<tr>
@@ -163,7 +170,7 @@
 	"cron": "0/5 * 9-17 ? * MON-FRI",
 	"pause": false
 }</cfif></textarea>
-					<input class="b submit" type="submit" name="add" value="#lang.btnAddUpdate#" />   
+					<input class="b submit" type="submit" name="add" value="#jobs.recordcount?lang.btnAddUpdate:lang.btnAdd#" />   
 					<div class="comment">
 						Note: You can use online tools to generate cron expressions. Just search for "cron expression generator" on Google. 
 						<br><br>

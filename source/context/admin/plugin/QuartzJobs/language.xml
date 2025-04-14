@@ -15,5 +15,11 @@
 		<custom key="btnAdd">Add</custom>
 		<custom key="btnSet">Set</custom>
 		<custom key="btnAddUpdate">Add or Update</custom>
+		<custom key="addUpdateTitle">Create or Edit Job</custom>		
+		<!-- TODO improve -->
+		<custom key="addUpdateDesc">You can create here a new job by defining the necessary json struct ar simply click on edit on a listed job above to edit it.</custom>		
+		<custom key="addTitle">Create Job</custom>			
+		<custom key="addDesc">You can create here a new job by defining the necessary json struct.</custom>		
+		<custom key="noJobs">There are no Jobs.</custom>
 	</language>
 </languages>
