@@ -284,10 +284,9 @@ component extends="QuartzSupport" javaSettings='{
 
     public static void function store(configFile,data) {
         fileWrite(configFile,serializeJSON(var:data,compact:false));
-        //systemOutput(configFile,1,1);
-        //systemOutput(serializeJSON(var:data,compact:false),1,1);
-        //systemOutput("<print-stack-trace>",1,1);
-            
+        // systemOutput(configFile,1,1);
+        // systemOutput(serializeJSON(var:data,compact:false),1,1);
+        // systemOutput("<print-stack-trace>",1,1);    
     }
 
     /**
@@ -397,16 +396,25 @@ component extends="QuartzSupport" javaSettings='{
 
 
     private function createJob(jobData) {
+        var jobName="";
+        var ignores={};
         // URL Job
-        if(!isNull(jobData.url)){
+        if(!isNull(jobData.url)) {
+            ignores["url"]="";
+            jobName=jobData.url;
             jobData.id=hash(jobData.url,"quick"); // TODO make better
+            ignores["id"]="";
             var builder = JobBuilder::newJob(static.clazzURL)
                 .withIdentity(jobData.id, "cfm")
                 .usingJobData("url", jobData.url);
         }
         // Component Job
         else if(!isNull(jobData.component) || !isNull(jobData.cfc)){
+            jobName=jobData.component?:jobData.cfc;
+            ignores["component"]="";
+            ignores["cfc"]="";
             jobData.id=hash(jobData.component?:jobData.cfc,"quick"); // TODO make better
+            ignores["id"]="";
             var builder = JobBuilder::newJob(static.clazzCFC)
                 .withIdentity(jobData.id, "cfm")
                 .usingJobData("component", jobData.component?:jobData.cfc);
@@ -415,20 +423,32 @@ component extends="QuartzSupport" javaSettings='{
             throw "invalid job defintion [#serializeJSON(jobData)#], missing `url` or `component`";
         }
         if(!isNull(jobData.cron)) {
+            ignores["schedule"]="";
+            ignores["cron"]="";
             builder
             .usingJobData("schedule", "cron")
             .usingJobData("cron", jobData.cron);
         }
         else if(!isNull(jobData.interval)) {
+            ignores["schedule"]="";
+            ignores["interval"]="";
             builder
             .usingJobData("schedule", "interval")
             .usingJobData("interval", jobData.interval);
         }
-        return builder
+
+        ignores["log"]="";
+        ignores["label"]="";
+        builder
             .usingJobData("log", variables.logName)
-            .usingJobData("label", jobData.label)
-                        .build();
-                        
+            .usingJobData("label", jobData.label?:jobName);
+
+        // we add all addional data we got to the job data
+        loop struct=jobData index="local.k" item="local.v" {
+            if(!isSimpleValue(v) || structKeyExists(ignores,k)) continue;
+            builder.usingJobData(k, v);
+        }
+        return builder.build();                        
     }
 
     private function createTrigger(jobData) {

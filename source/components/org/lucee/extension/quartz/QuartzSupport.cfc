@@ -184,6 +184,13 @@ abstract component {
             if(!isNull(time) ) sct["endAt"]= time;
             
             sct["pause"]="PAUSED"==state.name();
+
+            // set custom data
+            loop collection=dataMap index="local.k" item="local.v" {
+                if(!structKeyExists(sct,k) && k!="log")sct[k]=v;
+            }
+            
+
         }
         return arr;
     }
@@ -275,8 +282,6 @@ abstract component {
         }
         return coll;
     }
-
-
 
     public static function asString(obj) {
         return obj&"";
