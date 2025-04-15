@@ -19,6 +19,7 @@
         <mkdir dir="${temp}"/>
         <mkdir dir="${target}/"/>
         <mkdir dir="${maven.dir}"/>
+        <mkdir dir="${src}/config" />
     </target>
 
     <target name="maven-deps" depends="init" description="download dependencies using Maven">
