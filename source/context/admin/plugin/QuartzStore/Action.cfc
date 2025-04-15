@@ -41,7 +41,7 @@ component extends="org.lucee.extension.quartz.QuartzPlugin" {
 	 * this function will be called to initialize
 	 */
 	public function init(struct lang, struct app) {
-		//app.note=load();
+		super.init(lang,app);
 	}
 
 	public function overview(struct lang, struct app, struct req) {

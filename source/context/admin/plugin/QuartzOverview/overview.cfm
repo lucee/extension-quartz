@@ -74,6 +74,8 @@
 			Stop local representation of the Quartz Scheduler, that does not affect other server sharing the same job storage.
 		<cfelseif state EQ "stopped">
 			Start local representation of the Quartz Scheduler, that does not affect other server sharing the same job storage.
+		<cfelseif state EQ "undefined">
+			Quartz Scheduler Event Gateway seem not to be installed, install Gateway "quartz-task" first. 
 		</cfif>
 		<table class="maintbl checkboxtbl">
 		<tfoot>
