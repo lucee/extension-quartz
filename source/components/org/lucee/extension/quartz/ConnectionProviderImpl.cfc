@@ -13,7 +13,6 @@ component implementsJava="org.quartz.utils.ConnectionProvider"  accessors="true"
      * Get a connection from Lucee's connection pool
      */
     public function getConnection() {
-        systemOutput("---- getConnection ----",1,1);
         if(isEmpty(variables.datasource?:"")) {
             throw "datasource is not defined!";
         }

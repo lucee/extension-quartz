@@ -109,7 +109,6 @@ component extends="QuartzSupport" javaSettings='{
                         props.put("org.quartz.jobStore.dataSource", asString(ds));
                         props.put("org.quartz.jobStore.tablePrefix", asString(trim(variables.config.store.tablePrefix?:"QRTZ_")));
 
-                        // systemOutput(asString(variables.config.store.cluster?:true),1,1);
                         // Critical clustering configurations
                         props.put("org.quartz.jobStore.isClustered", asString(variables.config.store.cluster?:true)); // Force clustering to be true
                         props.put("org.quartz.jobStore.clusterCheckinInterval", asString(trim(variables.config.store.clusterCheckinInterval?:"15000")));
@@ -196,30 +195,23 @@ component extends="QuartzSupport" javaSettings='{
                 var state=cfc.getState();
                 if("running"!=state && "starting"!=state) break;
                 try {
-                    // systemOutput("-----------------------",1,1);
                     var configFile=getPageContext().getConfig().getDeployDirectory().getReal("config.quartz");
                     if(fileExists(configFile)) {
-                        // systemOutput("---------  found new config #now()# ---------",1,1);
-                        
                         // load the data
                         var newData=deserializeJSON(fileRead(configFile));
                          
                         // add jobs
-                        // systemOutput("---------  found #len(newData.jobs?:[])# job(s) ---------",1,1);
                         loop array=newData.jobs?:[] item="job" {
                             cfc.addJob(job);
                         }
 
                         // add listeners
-                        // systemOutput("---------  found #len(newData.listeners?:[])# listener(s) ---------",1,1);
                         loop array=newData.listeners?:[] item="listener" {
-                            // systemOutput(listener,1,1);
                             cfc.addListener(listener);
                         }
 
                         // change store, this actually need a restart
                         if(!isNull(newData.store)) {
-                            // systemOutput("---------  store #now()# ---------",1,1);
                             // TODO 
                             // var existingData=deserializeJSON(fileRead(cfc.getConfigFile()));
                             cfc.stop();
@@ -232,17 +224,14 @@ component extends="QuartzSupport" javaSettings='{
                             cfc.start();
                         }
                         if(fileExists(configFile)) fileDelete(configFile);
-                        // systemOutput("---------  done #now()# ---------",1,1);
                     }
                 }
                 catch(e) {
-                    // systemOutput(e,1,1);
                     log log=state type="error" exception=e;
                 }
                 sleep(10000);
             }
         }
-        // systemOutput("++++++++",1,1);
 	}
 
     public function addListener(listenerData) {
@@ -278,10 +267,7 @@ component extends="QuartzSupport" javaSettings='{
     }
 
     public static void function store(configFile,data) {
-        fileWrite(configFile,serializeJSON(var:data,compact:false));
-        // systemOutput(configFile,1,1);
-        // systemOutput(serializeJSON(var:data,compact:false),1,1);
-        // systemOutput("<print-stack-trace>",1,1);    
+        fileWrite(configFile,serializeJSON(var:data,compact:false)); 
     }
 
     /**
@@ -670,7 +656,6 @@ component extends="QuartzSupport" javaSettings='{
             stop();
             var res=Quartz::sendMessageStatic(variables.configFile, data,variables);
             start();
-            // systemOutput(res,1,1);
             return res;
 		}
 
@@ -695,12 +680,6 @@ component extends="QuartzSupport" javaSettings='{
 			var store=deserializeJSON(strStore);
             if(!isStruct(store)) throw "store need to be a struct";
             internalData.configUntranslated["store"]=store;
-            // systemOutput("*******************************************",1,1);
-            // systemOutput(store,1,1);
-            // systemOutput(serializeJSON(var:store,compact:false),1,1);
-            // systemOutput("...........................................",1,1);
-            // systemOutput(serializeJSON(var:internalData.configUntranslated,compact:false),1,1);
-            // systemOutput("*******************************************",1,1);
             Quartz::store(configFile,internalData.configUntranslated);
             return strStore;
 		}
