@@ -106,7 +106,7 @@
 		   </thead>
 		   <tr>
 			<td >
-				Type: #meta.jobStoreType#<br>
+				Type: #meta.jobStoreType?:""#<br>
 				Persistence: #yesNoFormat(meta.jobStoreSupportsPersistence)#<br>
 				Clustered: #yesNoFormat(meta.jobStoreClustered)#
 			</td>

@@ -30,7 +30,7 @@
  * 
  * @implementsJava org.quartz.Job
  */
-component implementsJava="org.quartz.Job" {
+component  implements="JavaSettings" implementsJava="org.quartz.Job" {
     
     /**
      * Required method for the org.quartz.Job interface

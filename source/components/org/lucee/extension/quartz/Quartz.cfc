@@ -51,11 +51,15 @@ component extends="QuartzSupport" javaSettings='{
 
 
     static {
+        static.instanceName="Lucee Quartz Scheduler";
+
         // Load URLJob and convert to a quartz Job class
         static.clazzURL=JavaCast("org.quartz.Job",new URLJob()).getClass(); 
+        static.clazzURLSF = JavaCast("org.quartz.StatefulJob", new StatefulURLJob()).getClass();
        
         // Load ComponentJob and convert to a quartz Job class
         static.clazzCFC=JavaCast("org.quartz.Job",new ComponentJob()).getClass(); 
+        static.clazzCFCSF = JavaCast("org.quartz.StatefulJob", new StatefulComponentJob()).getClass();
 
         // Load ConnectionProvider
         static.connProvName=JavaCast("org.quartz.utils.ConnectionProvider",new ConnectionProviderImpl()).getClass().getName(); 
@@ -80,17 +84,15 @@ component extends="QuartzSupport" javaSettings='{
         lock name="quartz-scheduler" {
             variables.state="starting";
             try {
-
                 // Configure the scheduler properties programmatically
                 var props = new Properties();
-                // props.put("org.quartz.scheduler.instanceName", instanceName);
-                // props.put("org.quartz.scheduler.instanceId", "AUTO");
+                props.put("org.quartz.scheduler.instanceName", static.instanceName);
+                props.put("org.quartz.scheduler.instanceId", "AUTO");
 
                 // Configure the thread pool
                 props.put("org.quartz.threadPool.class", "org.quartz.simpl.SimpleThreadPool");
                 props.put("org.quartz.threadPool.threadCount", trim(variables.config.threadPoolCount?:"10"));
                 props.put("org.quartz.threadPool.threadPriority", trim(variables.config.threadPoolPriority?:"5"));
-
                 props.put("org.quartz.threadPool.threadsInheritContextClassLoaderOfInitializingThread", "true");
                 
                 var hasStore=readJobs;
@@ -100,15 +102,21 @@ component extends="QuartzSupport" javaSettings='{
                     // Datasource
                     if("datasource"==variables.config.store.type) {
                         var ds = variables.config.store.datasource;
-                        // systemOutput("Configuring Quartz with Lucee datasource: " & ds, 1, 1);
                         
                         // Configure JDBC job store with Lucee datasource
                         props.put("org.quartz.jobStore.class", "org.quartz.impl.jdbcjobstore.JobStoreTX");
                         props.put("org.quartz.jobStore.driverDelegateClass", "org.quartz.impl.jdbcjobstore.StdJDBCDelegate");
                         props.put("org.quartz.jobStore.dataSource", asString(ds));
                         props.put("org.quartz.jobStore.tablePrefix", asString(trim(variables.config.store.tablePrefix?:"QRTZ_")));
-                        props.put("org.quartz.jobStore.isClustered", asString(variables.config.store.cluster?:true));
+
+                        // systemOutput(asString(variables.config.store.cluster?:true),1,1);
+                        // Critical clustering configurations
+                        props.put("org.quartz.jobStore.isClustered", asString(variables.config.store.cluster?:true)); // Force clustering to be true
                         props.put("org.quartz.jobStore.clusterCheckinInterval", asString(trim(variables.config.store.clusterCheckinInterval?:"15000")));
+                        props.put("org.quartz.jobStore.acquireTriggersWithinLock", "true"); // Important for clustered environments
+                        props.put("org.quartz.jobStore.lockHandler.class", "org.quartz.impl.jdbcjobstore.UpdateLockRowSemaphore");
+                        props.put("org.quartz.jobStore.misfireThreshold", asString(trim(variables.config.store.misfireThreshold?:"60000")));
+                    
                         
                         // Use our ConnectionProvider implementation for Lucee datasources
                         props.put("org.quartz.dataSource." & ds & ".connectionProvider.class", static.connProvName);
@@ -120,24 +128,6 @@ component extends="QuartzSupport" javaSettings='{
                         //if(!isNull(variables.config.store.password)) props.put("org.quartz.dataSource." & ds & ".password", asString(variables.config.store.password));
                         hasStore = true;
                         log log=variables.logName type="info" text="Quartz Scheduler: configured with Lucee datasource [#ds#]";
-                    }
-                    else if("jdbc"==variables.config.store.type) {
-                        var ds=variables.config.store.datasource;
-                        // Configure JDBC job store
-                        props.put("org.quartz.jobStore.class", "org.quartz.impl.jdbcjobstore.JobStoreTX");
-                        props.put("org.quartz.jobStore.driverDelegateClass", "org.quartz.impl.jdbcjobstore.StdJDBCDelegate");
-                        props.put("org.quartz.jobStore.dataSource", asString(ds));
-                        props.put("org.quartz.jobStore.tablePrefix", asString(trim(variables.config.store.tablePrefix?:"QRTZ_")));
-                        props.put("org.quartz.jobStore.isClustered", asString(variables.config.store.cluster?:true));
-                        props.put("org.quartz.jobStore.clusterCheckinInterval", asString(trim(variables.config.store.clusterCheckinInterval?:"15000")));
-
-                        // DataSource configuration
-                        props.put("org.quartz.dataSource." & ds & ".driver",asString(variables.config.store.driver));
-                        props.put("org.quartz.dataSource." & ds & ".URL", asString(variables.config.store.url));
-                        props.put("org.quartz.dataSource." & ds & ".user", asString(variables.config.store.username));
-                        props.put("org.quartz.dataSource." & ds & ".password", asString(variables.config.store.password));
-                        props.put("org.quartz.dataSource." & ds & ".maxConnections", "5");
-                        hasStore=true;
                     }
                     else if ("redis" == variables.config.store.type) {
                         // Configure Redis job store
@@ -155,6 +145,7 @@ component extends="QuartzSupport" javaSettings='{
                         props.put("org.quartz.jobStore.lockTimeout", asString(variables.config.store.lockTimeout ?: "30000"));
                         props.put("org.quartz.jobStore.ssl", asString((variables.config.store.ssl?:false)==true));
                         hasStore=true;
+                        log log=variables.logName type="info" text="Quartz Scheduler: configured with Redis Storage";
                     }
                 }
                 variables.factory = new StdSchedulerFactory(props);
@@ -402,13 +393,14 @@ component extends="QuartzSupport" javaSettings='{
     private function createJob(jobData) {
         var jobName="";
         var ignores={};
+        var isStateful = jobData.stateful ?: false;
         // URL Job
         if(!isNull(jobData.url)) {
             ignores["url"]="";
             jobName=jobData.url;
             jobData.id=hash(jobData.url,"quick"); // TODO make better
             ignores["id"]="";
-            var builder = JobBuilder::newJob(static.clazzURL)
+            var builder = JobBuilder::newJob(isStateful?static.clazzURLSF:static.clazzURL)
                 .withIdentity(jobData.id, "cfm")
                 .usingJobData("url", jobData.url);
         }
@@ -419,7 +411,7 @@ component extends="QuartzSupport" javaSettings='{
             ignores["cfc"]="";
             jobData.id=hash(jobData.component?:jobData.cfc,"quick"); // TODO make better
             ignores["id"]="";
-            var builder = JobBuilder::newJob(static.clazzCFC)
+            var builder = JobBuilder::newJob(isStateful?static.clazzCFCSF:static.clazzCFC)
                 .withIdentity(jobData.id, "cfm")
                 .usingJobData("component", jobData.component?:jobData.cfc);
         }
@@ -724,4 +716,28 @@ component extends="QuartzSupport" javaSettings='{
     public function getConfigFile() {
         return variables.configFile;
 	}
+
+    /**
+     * Gets the JobStore
+     * @return The JobStore instance
+     */
+    public function getJobStore() {
+        try {
+            // Get the internal QuartzScheduler instance (sched field)
+            var schedField = variables.scheduler.getClass().getDeclaredField("sched");
+            schedField.setAccessible(true);
+            var quartzScheduler = schedField.get(variables.scheduler);
+            
+            // Get the resources object
+            var resourcesField = quartzScheduler.getClass().getDeclaredField("resources");
+            resourcesField.setAccessible(true);
+            var resources = resourcesField.get(quartzScheduler);
+            
+            return resources.getJobStore();
+        }
+        catch (any e) {
+            log log=variables.logName type="error" text="Failed to get JobStore: #e.message#";
+        }
+        return nullValue();
+    }
 }

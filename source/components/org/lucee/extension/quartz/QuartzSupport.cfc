@@ -293,15 +293,34 @@ abstract component {
         if(!isNull(raw)) {
             // Get scheduler metadata
             //meta["raw"] = raw;
-            meta["jobStoreClass"] = raw.getJobStoreClass().getName();
-            meta["jobStoreSupportsPersistence"] = raw.isJobStoreSupportsPersistence();
-            meta["jobStoreClustered"] = raw.isJobStoreClustered();
             meta["version"] = raw.getVersion();
             meta["summary"] = raw.getSummary();
             meta["runningSince"] = raw.getRunningSince();
             meta["schedulerName"] = raw.getSchedulerName();
             meta["schedulerInstanceId"] = raw.getSchedulerInstanceId();
             meta["numberOfJobsExecuted"] = raw.getNumberOfJobsExecuted();
+            meta["threadPoolClass"] = raw.getThreadPoolClass().getName();
+            meta["threadPoolSize"] = raw.getThreadPoolSize();
+            meta["inStandbyMode"] = raw.isInStandbyMode();
+            meta["schedulerRemote"] = raw.isSchedulerRemote();
+            meta["shutdown"] = raw.isShutdown();
+            meta["started"] = raw.isStarted();
+            
+            // Job store
+            meta["jobStoreClass"] = raw.getJobStoreClass().getName();
+            meta["jobStoreSupportsPersistence"] = raw.isJobStoreSupportsPersistence();
+            meta["jobStoreClustered"] = raw.isJobStoreClustered();
+            var js=this.getJobStore();
+            if(!isNull(js)) {
+                
+                meta["jobStore"] = {
+                    //"clusterCheckinInterval":js.getClusterCheckinInterval()
+                    //,"raw":js
+                };
+                meta["started"] = raw.isStarted();
+            }
+            
+
             
             // type
             if(find("jdbcjobstore", meta["jobStoreClass"])) meta["jobStoreType"]="JDBC";

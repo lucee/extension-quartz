@@ -137,7 +137,8 @@
     "label": "every 5 seconds on work hours",
     "url": "/example.cfm",
     "cron": "0/5 * 9-17 ? * MON-FRI",
-    "pause": false
+    "pause": false,
+    "stateful": false
 }</textarea>
                     <button id="jobConfigButton" class="btn add" onclick="jobAction('','','add')">Add</button>    
                     <div class="comment">

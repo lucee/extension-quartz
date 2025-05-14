@@ -168,7 +168,8 @@
 	"label": "every 5 seconds on work hours",
 	"url": "/example.cfm",
 	"cron": "0/5 * 9-17 ? * MON-FRI",
-	"pause": false
+	"pause": false,
+        "stateful": false
 }</cfif></textarea>
 					<input class="b submit" type="submit" name="add" value="#jobs.recordcount?lang.btnAddUpdate:lang.btnAdd#" />   
 					<div class="comment">

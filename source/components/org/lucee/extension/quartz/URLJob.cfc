@@ -25,7 +25,7 @@
  * 
  * @implementsJava org.quartz.Job
  */
-component implementsJava="org.quartz.Job" {
+component implements="JavaSettings" implementsJava="org.quartz.Job"  {
     
     /**
      * Required method for the org.quartz.Job interface
@@ -58,11 +58,10 @@ component implementsJava="org.quartz.Job" {
                 var res=internalRequest(
                     template:template,
                     urls=qs,
-                    throwonerror:true);
+                    throwonerror:false);
             }
             
             
-           
             if(res.status_code>=200 && res.status_code<300) {
                 log log=logName type="debug" text="successfully executed [#_url#]";
             }
