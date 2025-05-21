@@ -4,7 +4,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>org.lucee</groupId>
     <artifactId>quartz-extension</artifactId>
-    <version>1.0.0.34-BETA</version>
+    <version>1.0.0.42-RC</version>
     <packaging>pom</packaging>
     <name>Quartz Extension</name>
 
@@ -14,7 +14,7 @@
         <maven.compiler.target>11</maven.compiler.target>
         <id>E99E43A5-C10E-41E9-878BFC82BAAD99CE</id>
         <bundlename>org.lucee.quartz.extension</bundlename>
-        <luceeCoreVersion>6.2.0.311-SNAPSHOT</luceeCoreVersion>
+        <luceeCoreVersion>7.0.0.211-BETA</luceeCoreVersion>
         <taskInstanceName>quartz-task</taskInstanceName>
         <configFile>{lucee-config}/quartz/config.json</configFile>
         <releaseType>server</releaseType>
