@@ -48,10 +48,10 @@ jobs:
     needs: setup
     env:
       QUARTZ_ENV_VAR: not used
-      LUCEE_TEST_VERSIONS_PLUS: ${{ vars.LUCEE_TEST_VERSIONS_PLUS }}
+      LUCEE_TEST_VERSIONS_JAKARTA: ${{ vars.LUCEE_TEST_VERSIONS_JAKARTA }}
     strategy:
       matrix:
-        lucee: ${{ fromJSON(vars.LUCEE_TEST_VERSIONS_PLUS) }}
+        lucee: ${{ fromJSON(vars.LUCEE_TEST_VERSIONS_JAKARTA) }}
     services:
       minio:
         image: fclairamb/minio-github-actions
