@@ -1,4 +1,4 @@
-component extends="org.lucee.cfml.test.LuceeTestCase" labels="redis" {
+component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
 	
 	function run( testResults , testBox ) {
 		
