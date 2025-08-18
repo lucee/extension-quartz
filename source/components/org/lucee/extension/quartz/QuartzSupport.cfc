@@ -356,7 +356,7 @@ abstract component {
         var listeners=[];
         if(!isNull(raw)) {
             loop array=raw item="local.record" {
-                var cfc=record._toComponent();
+                var cfc=record.cfc?:record._toComponent(); // newver version of Lucee provide the field "cfc", older have the method _toComponent
                 var path=getMetaData(cfc).fullname;
                 var conf=confListeners[path]?:"";
                 
