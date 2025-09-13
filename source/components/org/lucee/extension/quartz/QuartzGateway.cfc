@@ -1,20 +1,7 @@
 component {
-	
-    // we do this cfc, because Lucee does not unload a component when updating the extension
 
-	public void function init(string id, struct config, component listener) { 
-        var path=config.custom.configFile?:"{lucee-server}/quartz/config.json";
-        
-        
-        
-        variables.configFile=expandPath(path);
-        if(!fileExists(variables.configFile)) {
-            // make sure parent directory exists
-            var dir=getDirectoryFromPath(variables.configFile);
-            if(!directoryExists(dir)) {
-                directoryCreate(dir,true,true);
-            }
-            fileWrite(variables.configFile, '{
+    static {
+        static.DEFAULT_CONFIG='{
     "jobs": [
         /*{
             "label": "Example for every 60 seconds",
@@ -65,7 +52,39 @@ component {
         "port": 6379,
         "misfireThreshold": 60000
     }*/
-}');
+}';
+    }
+
+	
+    // we do this cfc, because Lucee does not unload a component when updating the extension
+
+	public void function init(string id, struct config, component listener) { 
+        var path=config.custom.configFile?:"{lucee-server}/quartz/config.json";
+        
+        
+        
+        variables.configFile=expandPath(path);
+        if(!fileExists(variables.configFile)) {
+            // make sure parent directory exists
+            var dir=getDirectoryFromPath(variables.configFile);
+            if(!directoryExists(dir)) {
+                directoryCreate(dir,true,true);
+            }
+
+            // import tasks from cfschedule
+            var jobs=ClassicMigrator::translateTasksToJobs();
+            // if there are no jibs we simply create the default config
+            if(len(jobs)==0) {
+                var config=static.DEFAULT_CONFIG;
+            }
+            else {
+                var config=serializeJSON({
+                    "jobs": jobs,
+                    "listener": [],
+                    "store": {}
+                });
+            }
+            fileWrite(variables.configFile, config);
         }
         variables.id=arguments.id?:"";
         variables.config=arguments.config?:{};

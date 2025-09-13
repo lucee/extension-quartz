@@ -2,7 +2,7 @@
 <style>
 .schedule-textarea {
     width: 100%; /* Make textarea full width */
-    height: 100px; /* Set a fixed height for consistency */
+    height: 120px; /* Set a fixed height for consistency */
     resize: vertical; /* Allow vertical resizing */
     box-sizing: border-box; /* Include padding/border in element's width and height */
     margin-bottom: 10px; /* Space between textarea and button */
@@ -15,6 +15,63 @@
 		<link rel="stylesheet" href="assets/all.min.css">
 		<link rel="stylesheet" href="assets/default.css?randon=<cfoutput>#createUniqueId()#</cfoutput>">
 		<script>
+function insertTemplate(type) {
+    var textarea = document.getElementById('jobConfigTextarea');
+    
+    if (type === 'url') {
+        textarea.value = `{
+    "label": "call URL every 5 seconds on work hours",
+    "url": "/example.cfm",
+    "cron": "0/5 * 9-17 ? * MON-FRI",
+    "pause": false,
+    "stateful": false
+}`;
+    } else if (type === 'component') {
+        textarea.value = `{
+    "label": "call CFC every hour", 
+    "component": "com.example.MyJobComponent",
+    "cron": "0 0 * * * ? *",
+    "pause": false,
+    "stateful": false
+}`;
+    } else if (type === 'daily') {
+        textarea.value = `{
+    "label": "call external URL daily at 17:32",
+    "url": "https://example.com/api/endpoint",
+    "cron": "0 32 17 * * ? *",
+    "pause": false,
+    "stateful": false
+}`;
+    } else if (type === 'weekly') {
+        textarea.value = `{
+    "label": "call Component every Friday at 13:20",
+    "component": "com.example.WeeklyJobComponent",
+    "cron": "0 20 13 ? * FRI *",
+    "pause": false,
+    "stateful": false
+}`;
+    } else if (type === 'monthly') {
+        textarea.value = `{
+    "label": "call URL once a month on the 14th when a weekday",
+    "url": "/monthly-report.cfm",
+    "cron": "0 0 9 14 * MON-FRI *",
+    "pause": false,
+    "stateful": false
+}`;
+    } else if (type === 'once') {
+        textarea.value = `{
+    "label": "call URL once on specific date",
+    "url": "/one-time-task.cfm",
+    "cron": "0 0 12 25 12 ? 2025",
+    "pause": false,
+    "stateful": false
+}`;
+    }
+    
+    // Focus the textarea so user can see the change
+    textarea.focus();
+}
+			
 			function jobAction(jobName, jobGroup, action) {
 				var xhr = new XMLHttpRequest();
 				xhr.open("POST", "action.cfm", true);
@@ -163,15 +220,23 @@
 	<table class="maintbl checkboxtbl">
 		<tr>
 			<tr>
-				<td colspan="9">
-					<textarea class="schedule-textarea" id="jobConfigTextarea" name="newval"><cfif structKeyExists(variables, "editval")>#variables.editval#<cfelse>{
-	"label": "every 5 seconds on work hours",
-	"url": "/example.cfm",
-	"cron": "0/5 * 9-17 ? * MON-FRI",
-	"pause": false,
-        "stateful": false
-}</cfif></textarea>
+				<td>
+					<textarea class="schedule-textarea" id="jobConfigTextarea" name="newval"><cfif structKeyExists(variables, "editval")>#variables.editval#</cfif></textarea>
 					<input class="b submit" type="submit" name="add" value="#jobs.recordcount?lang.btnAddUpdate:lang.btnAdd#" />   
+					<cfif not structKeyExists(variables, "editval")>
+						<div class="comment" style="margin: 10px 0 5px 0;">
+							<strong>#lang.quickTitle#:</strong> #lang.quickDesc#:
+							<ul>
+						        <li><a href="javascript:void(0)" class="btn-mini" onclick="insertTemplate('url')">#lang.quickURLEvery5s#</a></li>
+						        <li><a href="javascript:void(0)" class="btn-mini" onclick="insertTemplate('component')">#lang.quickCFCEveryHour#</a></li>
+						        <li><a href="javascript:void(0)" class="btn-mini" onclick="insertTemplate('daily')">#lang.quickDaily#</a></li>
+						        <li><a href="javascript:void(0)" class="btn-mini" onclick="insertTemplate('weekly')">#lang.quickWeekly#</a></li>
+						        <li><a href="javascript:void(0)" class="btn-mini" onclick="insertTemplate('monthly')">#lang.quickMonthly#</a></li>
+						        <li><a href="javascript:void(0)" class="btn-mini" onclick="insertTemplate('once')">#lang.quickOnce#</a></li>
+						    </ul>
+						</div>
+					</cfif>
+					
 					<div class="comment">
 						Note: You can use online tools to generate cron expressions. Just search for "cron expression generator" on Google. 
 						<br><br>
@@ -185,4 +250,36 @@
 	</form>
 		<!--- <cfif !isNull(session.alwaysNew)><cfdump var="#jobs#" expand=false></cfif>--->
 	</cfif>
+
+
+
+
+
+<cfif (hasClassicTasks?:false)>
+
+		
+
+	
+
+	<cfoutput>
+		<br><br><h3>#lang.importTitle#</h3>
+		<form  action="#action('delete')#" method="post">
+		<p>#lang.importDesc#</p>
+	</cfoutput>
+	<table class="maintbl checkboxtbl">
+		<tr>
+			<tr>
+				<td colspan="9">
+					<div class="comment"><input type="checkbox" name="deleteTasks" value="true">&nbsp;&nbsp;#lang.importAndDelete#</div>
+					<input class="b submit" type="submit" name="import" value="#lang.importButton#" />   
+				</td>
+		</tr>
+	</table>
+	</form>
+</cfif>
+
+
+
+
+
 </cfoutput>

@@ -20,7 +20,7 @@ component extends="org.lucee.extension.quartz.QuartzPlugin" {
 				variables.quartz=getQuartz(variables.gatewayName);
 				variables.jobs = variables.quartz.getTriggersAsQuery(false);
 				variables.meta = variables.quartz.getMetadataAsStruct();
-				
+				variables.hasClassicTasks=org.lucee.extension.quartz.ClassicMigrator::hasTasks();
 				if(structKeyExists(url, "jobGroup") && structKeyExists(url, "jobName")) {
 					try {
 						var data=variables.quartz.exportJob(url.jobName,url.jobGroup);
@@ -33,6 +33,24 @@ component extends="org.lucee.extension.quartz.QuartzPlugin" {
 		catch(cfcatch) {
 			handleException(lang, app, req, cfcatch);
 		}
+	}
+
+	public function delete(struct lang, struct app, struct req) {
+		var deleteTasks=isBoolean(form.deleteTasks?:"")?form.deleteTasks==true:false;
+		var jobs=org.lucee.extension.quartz.ClassicMigrator::translateTasksToJobs();
+		
+
+
+		var quartz=getQuartz(variables.gatewayName);
+		if(len(jobs)) {
+			loop array=jobs item="local.record" {
+				quartz.addJob(record);
+			}	
+		}
+		if(deleteTasks) {
+			org.lucee.extension.quartz.ClassicMigrator::deleteTasks();
+		}
+		return "redirect:overview";
 	}
 
 	public function update(struct lang, struct app, struct req) {

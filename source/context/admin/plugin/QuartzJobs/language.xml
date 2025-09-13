@@ -18,8 +18,30 @@
 		<custom key="addUpdateTitle">Create or Edit Job</custom>		
 		<!-- TODO improve -->
 		<custom key="addUpdateDesc">You can create here a new job by defining the necessary json struct or simply click on edit on a listed job above to edit it.</custom>		
+		<custom key="importTitle">Import Jobs</custom>			
+		
+		<custom key="importDesc">Import jobs from the classic Scheduled Tasks to the new Quartz Scheduler. This migration tool converts your existing scheduled tasks to Quartz jobs with equivalent functionality. Multiple imports are safe - existing jobs with the same URL will be updated rather than duplicated.</custom>
+
+		<custom key="importAndDelete">Delete original tasks from Scheduled Tasks after successful import. WARNING: This action cannot be undone.</custom>
+
+		<custom key="importButton">Import &amp; Migrate Tasks</custom>
+		<custom key="importDesc">Import Jobs (Tasks) from the classic Schdeuled Tasks application. You can do multiple imports, if the a job already exists with the same endpoint (URL) it will be simply updated.</custom>			
+		<custom key="importAndDelete">When checked the tasks get deleted from the scheduled tasks application after a sucessful import into Quartz scheduler, this step cannot be undone.</custom>		
+		<custom key="importButton">Import Tasks as Jobs</custom>		
 		<custom key="addTitle">Create Job</custom>			
 		<custom key="addDesc">You can create here a new job by defining the necessary json struct.</custom>		
 		<custom key="noJobs">There are no Jobs.</custom>
+
+		<custom key="quickTitle">Quick Templates</custom>
+		<custom key="quickDesc">Insert a pre-configured job template into the textarea above</custom>
+		<custom key="quickURL">Insert URL Job Template</custom>
+		<custom key="quickCFC">Insert Component Job Template</custom>
+
+		<custom key="quickURLEvery5s">Call URL every 5 seconds on working hours</custom>
+		<custom key="quickCFCEveryHour">Call a Component every hour</custom>
+		<custom key="quickDaily">call external URL daily at 17:32</custom>
+		<custom key="quickWeekly">call Component every Friday at 13:20</custom>
+		<custom key="quickMonthly">call URL once a month on the 14th when a weekday</custom>
+		<custom key="quickOnce">call URL once on specific date</custom>
 	</language>
 </languages>
