@@ -72,6 +72,14 @@ event-gateway-instance: "[{'cfcPath':'${cfc-path}','id':'${task-instance-name}',
                 <include name="**/*.cfc"/>
             </fileset>
         </copy>
+
+       <!-- copy the tags necessary -->
+        <copy todir="${temp}/tags">
+          <fileset dir="${src}/tags">
+            <include name="**/*.cfc"/>
+          </fileset>
+        </copy>
+
         <!-- copy the event-gateway -->
         <copy todir="${temp}/event-gateways">
             <fileset dir="${src}/event-gateways">

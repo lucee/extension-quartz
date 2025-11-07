@@ -8,8 +8,6 @@
     margin-bottom: 10px; /* Space between textarea and button */
 }
 </style>
-	<cfscript>
-	</cfscript>
 		<meta charset="UTF-8">
 		<meta name="viewport" content="width=device-width, initial-scale=1.0">
 		<link rel="stylesheet" href="assets/all.min.css">
@@ -21,6 +19,7 @@ function insertTemplate(type) {
     if (type === 'url') {
         textarea.value = `{
     "label": "call URL every 5 seconds on work hours",
+    "slug": "example-every-5s",
     "url": "/example.cfm",
     "cron": "0/5 * 9-17 ? * MON-FRI",
     "pause": false,
@@ -157,7 +156,7 @@ function insertTemplate(type) {
 
 	<form  action="#action('update')#" method="post">
 		<cfif jobs.recordcount>
-		<table class="maintbl checkboxtbl">
+			<table class="maintbl checkboxtbl">
 			<thead>
 				<tr>
 					<th><input type="checkbox" class="checkbox" name="all" onclick="selectAll(this)" /></th>
@@ -175,8 +174,14 @@ function insertTemplate(type) {
 				<cfoutput query="jobs">
 				<tr class="<cfif jobs.state EQ 'NORMAL'>OK<cfelseif jobs.state EQ 'PAUSED'>tblContentYellow<cfelseif jobs.state EQ 'ERROR' OR jobs.state EQ 'BLOCKED'>notOK<cfelse>complete</cfif>">
 					<td rowspan="2"><input type="checkbox" class="checkbox" name="row[]" value="#jobs.jobName#:#jobs.jobGroup#"></td>
-					<td rowspan="2"><b>#jobs.jobLabel#</b><br>#jobs.endpoint#</td>
-					<td rowspan="2">#jobs.schedule# #jobs.scheduleType=="interval"?" seconds":""#</td>
+					<td rowspan="2"><b>#jobs.jobLabel#</b><cfif len(jobs.slug?:"") and jobs.jobLabel NEQ jobs.slug> (#jobs.slug#)</cfif><br>#jobs.endpoint#</td>
+					<td rowspan="2">
+						<cfif jobs.scheduleType EQ "interval">
+							#displayTimeRange(jobs.schedule)#
+						<cfelse>
+							#jobs.schedule#
+						</cfif>
+					</td>
 					<td ><cfif isDate(jobs.previousFireTime)>#diffFormat(jobs.previousFireTime)#<cfelse>-</cfif></td>
 
 					<td rowspan="2">
@@ -238,12 +243,21 @@ function insertTemplate(type) {
 					</cfif>
 					
 					<div class="comment">
-						Note: You can use online tools to generate cron expressions. Just search for "cron expression generator" on Google. 
+						<strong>Notes:</strong>  
+						<ul>
+							<li>Use online "cron expression generators" to create schedule patterns like "0/5 * 9-17 ? * MON-FRI".</li>
+							<li>URLs starting with "/" make local calls (same server). Full URLs (e.g., "http://...") allow external/distributed execution.</li>
+							<li>Provide a single JSON object for one job, or an array of objects for multiple jobs.</li>
+							<li>If you wanna use the same component/url for multiple jobs, define the key "slug" as identifier like "lucee-org-once-a-day".</li>
+						</ul>
+						
 						<br><br>
-						If the URL starts with "/", it will make a local call using the internalRequest function, meaning the job will run on the same server. 
-						If the URL is a full address like "http://localhost:8888/jobs/dummy.cfm", the job can run from any server, which is useful for distributed or external tasks.
+						
+						
 						<br><br>
-						<strong>Tip:</strong> You can add a single job by providing a JSON structure with the job details. To add multiple jobs at once, use an array of such structures, with each structure representing a different job. This allows you to efficiently set up multiple tasks in one go.
+						<strong>Tips:</strong> 
+						
+						
 					</div> </td>
 		</tr>
 	</table>
@@ -263,14 +277,18 @@ function insertTemplate(type) {
 
 	<cfoutput>
 		<br><br><h3>#lang.importTitle#</h3>
-		<form  action="#action('delete')#" method="post">
+		<form  action="#action('import')#" method="post">
 		<p>#lang.importDesc#</p>
 	</cfoutput>
 	<table class="maintbl checkboxtbl">
 		<tr>
 			<tr>
 				<td colspan="9">
-					<div class="comment"><input type="checkbox" name="deleteTasks" value="true">&nbsp;&nbsp;#lang.importAndDelete#</div>
+					<div class="comment">
+						<input  class="radio" type="radio" name="importAnd" value="" checked="true">&nbsp;&nbsp;#lang.importAndNothing#<br>
+						<input  class="radio" type="radio" name="importAnd" value="pause">&nbsp;&nbsp;#lang.importAndPause#<br>
+						<input  class="radio" type="radio" name="importAnd" value="delete">&nbsp;&nbsp;#lang.importAndDelete#
+					</div>
 					<input class="b submit" type="submit" name="import" value="#lang.importButton#" />   
 				</td>
 		</tr>

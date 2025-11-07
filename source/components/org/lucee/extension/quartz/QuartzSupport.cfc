@@ -104,7 +104,7 @@ abstract component {
             jobs[job.getKey().getName()]=job;
         }
 
-        var names=["jobLabel","jobName","jobGroup","schedule","scheduleType","scheduleTranslated","endpoint","state","mayFireAgain","startTime","endTime","previousFireTime","nextFireTime","finalFireTime"];
+        var names=["jobLabel","jobName","jobGroup","schedule","scheduleType","scheduleTranslated","slug","endpoint","state","mayFireAgain","startTime","endTime","previousFireTime","nextFireTime","finalFireTime"];
         if(extended){
             arrayAppend(names, "key");
             arrayAppend(names, "jobDataMap");
@@ -121,6 +121,7 @@ abstract component {
             querySetCell(qry, "jobLabel", dataMap["label"]?:"",row);
             querySetCell(qry, "jobName", job.getName(),row);
             querySetCell(qry, "jobGroup", job.getGroup(),row);
+            if(structKeyExists(dataMap, "slug")) querySetCell(qry, "slug", dataMap["slug"],row);
             if(structKeyExists(dataMap, "url")) querySetCell(qry, "endpoint", dataMap["url"],row);
             else if(structKeyExists(dataMap, "component")) querySetCell(qry, "endpoint", dataMap["component"],row);
             querySetCell(qry, "state", state.name(),row);
@@ -172,6 +173,7 @@ abstract component {
             }
             
             sct["label"]=dataMap["label"];
+            if(structKeyExists(dataMap, "slug")) sct["slug"]=dataMap["slug"];
             if(structKeyExists(dataMap, "url")) sct["url"]=dataMap["url"];
             else if(structKeyExists(dataMap, "component")) sct["component"]=dataMap["component"];
             
@@ -189,8 +191,6 @@ abstract component {
             loop collection=dataMap index="local.k" item="local.v" {
                 if(!structKeyExists(sct,k) && k!="log")sct[k]=v;
             }
-            
-
         }
         return arr;
     }
@@ -207,7 +207,7 @@ abstract component {
 
     public function getJobsAsQuery( boolean extended=false) {
         var jobs=getJobs();
-        var names=["label","name","group","url","component"];
+        var names=["label","name","group","slug","url","component"];
         if(extended){
             arrayAppend(names, "dataMap");
             arrayAppend(names, "key");
@@ -222,6 +222,7 @@ abstract component {
             querySetCell(qry, "label", dataMap["label"]?:"",row);
             querySetCell(qry, "name", job.getName(),row);
             querySetCell(qry, "group", job.getGroup(),row);
+            if(structKeyExists(dataMap, "slug")) querySetCell(qry, "slug", dataMap["slug"],row);
             if(structKeyExists(dataMap, "url")) querySetCell(qry, "url", dataMap["url"],row);
             else if(structKeyExists(dataMap, "component")) querySetCell(qry, "component", dataMap["component"],row);
 

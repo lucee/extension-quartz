@@ -312,11 +312,19 @@ component extends="QuartzSupport" javaSettings='{
         // update
         var insert=true;
         loop array=jobs index="local.i" item="local.data" {
-            if(!isNull(jobData.component) &&  jobData.component==(data.component?:"32749234z3")) {
+            // slug match
+            if(!isNull(jobData.slug) &&  jobData.slug==(data.slug?:"32749234z3")) {
                 jobs[i]=jobData;
                 insert=false;
                 break;
             }
+            // component match
+            else if(!isNull(jobData.component) &&  jobData.component==(data.component?:"32749234z3")) {
+                jobs[i]=jobData;
+                insert=false;
+                break;
+            }
+            // url match
             else if(!isNull(jobData.url) &&  jobData.url==(data.url?:"32749234z3")) {
                 jobs[i]=jobData;
                 insert=false;
@@ -384,7 +392,13 @@ component extends="QuartzSupport" javaSettings='{
         if(!isNull(jobData.url)) {
             ignores["url"]="";
             jobName=jobData.url;
-            jobData.id=hash(jobData.url,"quick"); // TODO make better
+            if(structKeyExists(jobData, "slug")) {
+                jobData.id=hash(jobData.slug,"quick");
+            }
+            else {
+                jobData.id=hash(jobData.url,"quick");
+            }
+             // TODO make better
             ignores["id"]="";
             var builder = JobBuilder::newJob(isStateful?static.clazzURLSF:static.clazzURL)
                 .withIdentity(jobData.id, "cfm")
@@ -395,7 +409,12 @@ component extends="QuartzSupport" javaSettings='{
             jobName=jobData.component?:jobData.cfc;
             ignores["component"]="";
             ignores["cfc"]="";
-            jobData.id=hash(jobData.component?:jobData.cfc,"quick"); // TODO make better
+            if(structKeyExists(jobData, "slug")) {
+                jobData.id=hash(jobData.slug,"quick");
+            }
+            else {
+                jobData.id=hash(jobData.component?:jobData.cfc,"quick"); 
+            }
             ignores["id"]="";
             var builder = JobBuilder::newJob(isStateful?static.clazzCFCSF:static.clazzCFC)
                 .withIdentity(jobData.id, "cfm")
@@ -535,6 +554,10 @@ component extends="QuartzSupport" javaSettings='{
         actionOnJob("pauseJob",name,group?:nullValue());
         sync();
 	} 
+
+    public function triggerJob(name,string group) {
+        actionOnJob("triggerJob",name,group?:nullValue());
+    }
 
     private function actionOnJob(string action,name,string group) {
         // name can be a JobJey object or a string
@@ -718,5 +741,32 @@ component extends="QuartzSupport" javaSettings='{
             log log=variables.logName type="error" text="Failed to get JobStore: #e.message#";
         }
         return nullValue();
+    }
+
+    public static function getInstance(string name="quartz-task") {
+        var state=sendGatewayMessage(name, {
+            "action":"state"
+        });
+        
+        if(state!="running") {
+            throw(
+                type="Schedule.SchedulerNotRunning",
+                message="Quartz Scheduler is not running",
+                detail="Current state is [#state#]. The scheduler must be in 'running' state to perform operations. Please check the Lucee Administrator or event gateway configuration."
+            );
+        }
+        
+        var varName="quartzScheduler"&hash(createUniqueID(),"quick");
+
+        // Temporarily set to server scope to retrieve the instance
+        sendGatewayMessage(name, {
+            "action":"scheduler",
+            "variable":"server."&varName
+        });
+        
+        var quartz=server[varName];
+        structDelete(server, varName, false);
+        
+        return quartz;
     }
 }

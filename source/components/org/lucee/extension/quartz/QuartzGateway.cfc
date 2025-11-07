@@ -85,6 +85,8 @@ component {
                 });
             }
             fileWrite(variables.configFile, config);
+            // pause the existing tasks, so they not run twice
+            org.lucee.extension.quartz.ClassicMigrator::pauseTasks();
         }
         variables.id=arguments.id?:"";
         variables.config=arguments.config?:{};

@@ -13,6 +13,44 @@ component extends="org.lucee.extension.quartz.QuartzPlugin" {
 		super.init(lang,app);
 	}
 
+	public function displayTimeRange(numeric seconds) {
+		// less than a minute
+		if(seconds<60) {
+			return "every #seconds# second#seconds==1?'':'s'#"; 
+		}
+		// exactly in days
+		if((seconds mod (60*60*24))==0) {
+			var days=int(seconds/(60*60*24));
+			return "every #days# day#days==1?'':'s'#"; 
+		}
+		// exactly in hours
+		if((seconds mod (60*60))==0) {
+			var hours=int(seconds/(60*60));
+			return "every #hours# hour#hours==1?'':'s'#"; 
+		}
+		// exactly in minutes
+		if((seconds mod 60)==0) {
+			var minutes=int(seconds/60);
+			return "every #minutes# minute#minutes==1?'':'s'#"; 
+		}
+
+		var s=seconds;
+		var h=0;
+		if(seconds>=60*60) {
+			h=int(seconds/(60*60));
+			seconds=seconds-(h*60*60);
+		}
+		var m=0;
+		if(seconds>=60) {
+			m=int(seconds/60);
+			seconds=seconds-(m*60);
+		}
+		
+		return "#repeatString("2",0)# every (hh:mm:ss) #stringLen(h)==1?'0':''##h#:#stringLen(m)==1?'0':''##m#:#stringLen(seconds)==1?'0':''##seconds#";
+		
+		
+	}
+
 	public function overview(struct lang, struct app, struct req) {
 		try {
 			variables.state=GatewayState(variables.gatewayName);
@@ -35,12 +73,10 @@ component extends="org.lucee.extension.quartz.QuartzPlugin" {
 		}
 	}
 
-	public function delete(struct lang, struct app, struct req) {
-		var deleteTasks=isBoolean(form.deleteTasks?:"")?form.deleteTasks==true:false;
+	public function import(struct lang, struct app, struct req) {
+		var deleteTasks=(form.importAnd?:"")=="delete";
+		var pauseTasks=(form.importAnd?:"")=="pause";
 		var jobs=org.lucee.extension.quartz.ClassicMigrator::translateTasksToJobs();
-		
-
-
 		var quartz=getQuartz(variables.gatewayName);
 		if(len(jobs)) {
 			loop array=jobs item="local.record" {
@@ -49,6 +85,9 @@ component extends="org.lucee.extension.quartz.QuartzPlugin" {
 		}
 		if(deleteTasks) {
 			org.lucee.extension.quartz.ClassicMigrator::deleteTasks();
+		}		
+		else if(pauseTasks) {
+			org.lucee.extension.quartz.ClassicMigrator::pauseTasks();
 		}
 		return "redirect:overview";
 	}
@@ -125,23 +164,7 @@ component extends="org.lucee.extension.quartz.QuartzPlugin" {
 	}
 	
 	public function getQuartz(name="quartz-task") {
-        var state=sendGatewayMessage(name, {
-            "action":"state"
-        });
-        
-        if(state!="running") {
-            throw "Quartz Scheduler is no running, state is [#state#]";
-        }
-        var varName="quartzScheduler"&hash(createUniqueID(),"quick");
-
-        // set it to the server scope
-        sendGatewayMessage(name, {
-            "action":"scheduler"
-            ,"variable":"server."&varName
-        });
-        var quartz=server[varName];
-        structDelete(server, varName,false);
-        return quartz;
+        return org.lucee.extension.quartz.Quartz::getInstance(name);
     }
 
 
