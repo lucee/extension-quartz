@@ -56,7 +56,7 @@ component  implements="JavaSettings" implementsJava="org.quartz.Job" {
             // mode
             var singleton=false;
             var mode=dataMap.getString("mode");
-            if(!isNull(mode) && mode=="singelton") local.singleton=true;
+            if(!isNull(mode) && mode=="singleton") local.singleton=true;
 
             
             var label=dataMap.getString("label");
