@@ -106,6 +106,12 @@ component {
     }
 
     boolean function onStartTag(required struct attributes, required struct caller) {
+        
+        // PATCH - Lucee does invoke Application.cfc as part of loading a Gateway, that can cause a infiniti loop, this will be addressed in future Lucee versions, but this prevents it.
+        if(isStoreOnlyCall()) {
+            return true;
+        }
+        
         var action=trim(attributes.action);
 
         // validate required attributes
@@ -326,5 +332,14 @@ component {
 
     private function getQuartz(string name="quartz-task") {
         return org.lucee.extension.quartz.Quartz::getInstance(name);
+    }
+
+    private function isStoreOnlyCall() {
+        local.req=getPageContext().getHttpServletRequest();
+        local.client=req.getAttribute("client");
+        local.callType=req.getAttribute("call-type");
+        
+        return find("lucee-gateway-", local.client?:"")>0 && (local.callType?:"")=="store-only";
+        
     }
 }
