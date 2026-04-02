@@ -59,11 +59,13 @@ component {
     // we do this cfc, because Lucee does not unload a component when updating the extension
 
 	public void function init(string id, struct config, component listener) { 
-        var path=config.custom.configFile?:"{lucee-server}/quartz/config.json";
+        var path=server.system.environment.QUARTZ_CONFIGFILE?:"";
+        if(isEmpty(path)) {
+            path=config.custom.configFile?:"{lucee-server}/quartz/config.json";
+            path=expandPath(path);
+        }
+        variables.configFile=path;
         
-        
-        
-        variables.configFile=expandPath(path);
         if(!fileExists(variables.configFile)) {
             // make sure parent directory exists
             var dir=getDirectoryFromPath(variables.configFile);
