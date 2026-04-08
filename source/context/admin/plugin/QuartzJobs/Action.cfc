@@ -11,6 +11,7 @@ component extends="org.lucee.extension.quartz.QuartzPlugin" {
 	 */
 	public function init(struct lang, struct app) {
 		super.init(lang,app);
+		session.alwaysNew=true; // we need this, otherwise the action fails
 	}
 
 	public function displayTimeRange(numeric seconds) {

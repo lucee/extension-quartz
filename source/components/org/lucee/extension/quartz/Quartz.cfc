@@ -164,11 +164,33 @@ component extends="QuartzSupport" javaSettings='{
                 }
                 
                 // load jobs
+                var isPrimaryFile = (config.primary ?: (hasStore ? "store" : "file")) == "file";
                 if(!isNull(config.jobs)) {
                     var existingJobs=getExistingJobs();
                     
                     // we only load jobs from local, if there is no store or there are no jobs in store
-                    if(!hasStore || structCount(existingJobs)==0) {
+                    if(!hasStore || isPrimaryFile || structCount(existingJobs)==0) {
+                        
+                        // handle deletions first if file is primary
+                        if (isPrimaryFile && hasStore) {    
+                            // create job ids from config
+                            var configJobIds = {};
+                            loop array=config.jobs item="local.jobData" {
+                                if(structKeyExists(jobData, "slug")) {
+                                    configJobIds[hash(jobData.slug, "quick")] = true;
+                                }
+                                else if(structKeyExists(jobData, "component")) {
+                                    configJobIds[hash(jobData.component, "quick")] = true;
+                                }
+                                else if(structKeyExists(jobData, "url")) {
+                                    configJobIds[hash(jobData.url, "quick")] = true;
+                                }
+                            }
+                            loop collection=existingJobs item="local.key" {
+                                if (!structKeyExists(configJobIds, key)) deleteJob(existingJobs[key].job);
+                            }
+                        }
+                        // update or add jobs
                         loop array=config.jobs item="local.jobData" {
                             try {
                                 loadJob(jobData,existingJobs);
@@ -227,7 +249,7 @@ component extends="QuartzSupport" javaSettings='{
                     }
                 }
                 catch(e) {
-                    log log=state type="error" exception=e;
+                    log log=logname type="error" exception=e;
                 }
                 sleep(10000);
             }
@@ -261,6 +283,9 @@ component extends="QuartzSupport" javaSettings='{
         data["jobs"]=exportJobs();
         data["listeners"]=variables.configUntranslated.listeners?:[];
         data["store"]=variables.configUntranslated.store?:{};
+        if(structKeyExists(variables.configUntranslated,"primary") && !isEmpty(variables.configUntranslated.primary)) {
+            data["primary"]=variables.configUntranslated.primary;
+        }
         variables.configUntranslated=data;
         variables.config = resolveEnvVar(data);
         store(variables.configFile,variables.configUntranslated);
@@ -360,11 +385,11 @@ component extends="QuartzSupport" javaSettings='{
                 return;
             }
         }
+                
         variables.scheduler.scheduleJob(job, trigger);
         // dump("------ add "&job.name&" ------");
         // change state of new jobs
         if(data.pause?:false) {
-            //dump("--- pause ---");
             scheduler.pauseTrigger(trigger.getKey());
             scheduler.pauseJob(job.getKey());
         }
@@ -563,14 +588,19 @@ component extends="QuartzSupport" javaSettings='{
         // name can be a JobJey object or a string
         if(isSimpleValue(name)) {
             local.jk=new JobKey(name,group);
+            var strName=name;
         }
         else {
             local.jk=name;
+            var strName=jk.getName();
         }
         var sched=variables.scheduler;
         if(isNull(sched)) throw "there is no scheduler initalized";
         var map = sched.getJobDetail(jk).getJobDataMap();
         sched[action](local.jk);
+
+        log log=variables.logName type="debug" text="Quartz Scheduler: performing action [#action#] on job [#group#:#strName#]";
+
         return map;
 	} 
 

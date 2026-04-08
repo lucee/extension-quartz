@@ -250,14 +250,6 @@ function insertTemplate(type) {
 							<li>Provide a single JSON object for one job, or an array of objects for multiple jobs.</li>
 							<li>If you wanna use the same component/url for multiple jobs, define the key "slug" as identifier like "lucee-org-once-a-day".</li>
 						</ul>
-						
-						<br><br>
-						
-						
-						<br><br>
-						<strong>Tips:</strong> 
-						
-						
 					</div> </td>
 		</tr>
 	</table>
