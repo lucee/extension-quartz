@@ -153,6 +153,16 @@ component extends="QuartzSupport" javaSettings='{
                 // load listeners
                 if(!isNull(config.listeners)) {
                     var existingListener=getListeners(true);
+                    var isPrimaryFile = (variables.config.primary ?: (hasStore ? "store" : "file")) == "file";
+
+                    // if file is primary, remove all existing listeners first so config is always authoritative
+                    if(isPrimaryFile) {
+                        loop struct=existingListener index="local.name" {
+                            variables.scheduler.getListenerManager().removeJobListener(name);
+                        }
+                        existingListener = {};
+                    }
+
                     loop array=config.listeners item="local.listenerData" {
                         try {
                             loadListener(listenerData,existingListener);
@@ -162,7 +172,7 @@ component extends="QuartzSupport" javaSettings='{
                         }
                     }
                 }
-                
+
                 // load jobs
                 var isPrimaryFile = (config.primary ?: (hasStore ? "store" : "file")) == "file";
                 if(!isNull(config.jobs)) {
