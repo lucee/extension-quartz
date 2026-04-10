@@ -596,20 +596,21 @@ component extends="QuartzSupport" javaSettings='{
 
     private function actionOnJob(string action,name,string group) {
         // name can be a JobJey object or a string
+        var strName="";
         if(isSimpleValue(name)) {
             local.jk=new JobKey(name,group);
             var strName=name;
         }
         else {
             local.jk=name;
-            var strName=jk.getName();
+            try{var strName=jk.getName();}catch(ex) {}
         }
         var sched=variables.scheduler;
         if(isNull(sched)) throw "there is no scheduler initalized";
         var map = sched.getJobDetail(jk).getJobDataMap();
         sched[action](local.jk);
 
-        log log=variables.logName type="debug" text="Quartz Scheduler: performing action [#action#] on job [#group#:#strName#]";
+        log log=variables.logName type="debug" text="Quartz Scheduler: performing action [#action#] on job [#strName#]";
 
         return map;
 	} 
