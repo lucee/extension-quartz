@@ -100,7 +100,7 @@ component  implements="JavaSettings" implementsJava="org.quartz.Job" {
             e["timestamp"]=now();
             dataMap["lastException"]=e;
             log log=logName type="error" exception=e;
-            rethrow;
+            throw new org.quartz.JobExecutionException(e);
         }
     }
 }

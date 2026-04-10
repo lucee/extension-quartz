@@ -58,7 +58,7 @@ component implements="JavaSettings" implementsJava="org.quartz.Job"  {
                 var res=internalRequest(
                     template:template,
                     urls=qs,
-                    throwonerror:false);
+                    throwonerror:true);
             }
             
             
@@ -73,7 +73,7 @@ component implements="JavaSettings" implementsJava="org.quartz.Job"  {
             e["timestamp"]=now();
             dataMap["lastException"]=e;
             log log=logName type="error" exception=e;
-            rethrow;
+            throw new org.quartz.JobExecutionException(e);
         }
     }
 }
