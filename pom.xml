@@ -4,7 +4,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>org.lucee</groupId>
     <artifactId>quartz-extension</artifactId>
-    <version>1.0.0.51-SNAPSHOT</version>
+    <version>1.0.0.52-SNAPSHOT</version>
     <packaging>pom</packaging>
     <name>Quartz Extension</name>
 
@@ -218,16 +218,17 @@
                 <version>3.0.0-M1</version>
                 <executions>
                     <execution>
-                        <id>default-deploy</id>
+                        <id>deploy-lite</id>
                         <phase>deploy</phase>
                         <goals>
                             <goal>deploy-file</goal>
                         </goals>
                         <configuration>
-                            <file>${project.build.directory}/${project.artifactId}-${project.version}.lex</file>
+                            <file>${project.build.directory}/${project.artifactId}-${project.version}.lite.lex</file>
                             <groupId>${project.groupId}</groupId>
                             <artifactId>${project.artifactId}</artifactId>
                             <version>${project.version}</version>
+                            <classifier>lite</classifier>
                             <repositoryId>ossrh</repositoryId>
                             <url>${deploy.url}</url>
                             <packaging>lex</packaging>
