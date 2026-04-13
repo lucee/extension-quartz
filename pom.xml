@@ -82,6 +82,7 @@
                                 <configuration>
                                     <files>
                                         <file>${project.build.directory}/${project.artifactId}-${project.version}.lex</file>
+                                        <file>${project.build.directory}/${project.artifactId}-${project.version}.lite.lex</file>
                                     </files>
                                 </configuration>
                             </execution>
