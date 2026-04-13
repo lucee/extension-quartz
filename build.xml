@@ -105,11 +105,20 @@ event-gateway-instance: "[{'cfcPath':'${cfc-path}','id':'${task-instance-name}',
                 <include name="**/*.*"/>
             </fileset>
         </copy>
-        <!-- Zip everything -->
+
+        <!-- Full artifact: everything including bundled jars -->
         <zip destfile="${target}/${filename}-${bundleversion}.lex">
             <zipfileset dir="${temp}"/>
         </zip>
+
+        <!-- Lite artifact: same but without bundled jars, Lucee fetches them from Maven -->
+        <zip destfile="${target}/${filename}-${bundleversion}.lite.lex">
+            <zipfileset dir="${temp}">
+                <exclude name="maven/**"/>
+            </zipfileset>
+        </zip>
     </target>
+
     
     <target name="clean" depends="zip" description="clean up">
         <!-- <delete dir="${temp}"/> -->

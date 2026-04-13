@@ -4,7 +4,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>org.lucee</groupId>
     <artifactId>quartz-extension</artifactId>
-    <version>1.0.0.51-RC</version>
+    <version>1.0.0.51-SNAPSHOT</version>
     <packaging>pom</packaging>
     <name>Quartz Extension</name>
 
@@ -169,6 +169,11 @@
                                     <type>lex</type>
                                 </artifact>
                             </artifacts>
+                            <artifact>
+                                <file>${project.build.directory}/${project.artifactId}-${project.version}.lite.lex</file>
+                                <type>lex</type>
+                                <classifier>lite</classifier>
+                            </artifact>
                         </configuration>
                     </execution>
                 </executions>
