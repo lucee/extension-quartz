@@ -57,8 +57,11 @@ artifactId: "${artifactId}"
 name: "${label}"
 description: "${description}"
 lucee-core-version: "${luceeCoreVersion}"
-event-gateway-instance: "[{'cfcPath':'${cfc-path}','id':'${task-instance-name}','readOnly':false,'startupMode':'automatic','custom':{'configFile':'${config-file}','logName':'scheduler'}}]"
 </echo>
+<!--
+event-gateway-instance: "[{'cfcPath':'${cfc-path}','id':'${task-instance-name}','readOnly':false,'startupMode':'automatic','custom':{'configFile':'${config-file}','logName':'scheduler'}}]"
+-->
+
     </target>
     
     <target name="zip" depends="createManifest" description="generate the distribution">
