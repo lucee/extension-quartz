@@ -759,15 +759,14 @@ component extends="QuartzSupport" javaSettings='{
         return variables.state;
 	}
 	public static array function getStates() {
+        // org.quartz.Trigger.TriggerState is a nested enum, which `import org.quartz.*`
+        // does not resolve. Its values are fixed for the pinned Quartz 2.3.2 dependency,
+        // so we list them directly rather than loading the nested class by name.
         if(isNull(static.states)) {
-            local.names=[];
-            loop array=TriggerState::values() item="local.enum" {
-                arrayAppend(names, enum.name())
-            }
-            static.states=local.names;
+            static.states=["NONE","NORMAL","PAUSED","COMPLETE","ERROR","BLOCKED"];
         }
         return static.states;
-	} 
+	}
 
     public function getListeners(boolean asStruct=false) {
         var listeners=asStruct?[:]:[];

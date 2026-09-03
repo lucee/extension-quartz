@@ -244,17 +244,18 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
 
             it( "fires a relative URL job through internalRequest", function() {
                 var token   = createUniqueId();
-                var webroot = expandPath( "/" );
-                if ( right( webroot, 1 ) != "/" ) webroot &= "/";
+                // write the invoked template into the mapped tests directory: it is writable
+                // (unlike the web root) and resolvable by internalRequest via "/testAdditional"
+                var dir     = expandPath( "/testAdditional/" );
                 var cfmName = "quartz-url-job-" & token & ".cfm";
-                var cfmPath = webroot & cfmName;
+                var cfmPath = dir & cfmName;
                 // internalRequest runs this template, which writes a marker file we can observe
                 var marker  = getTempDirectory() & "quartz-url-marker-" & token & ".txt";
                 fileWrite( cfmPath, '<cf'&'set fileWrite("' & marker & '", "ran")>' );
 
                 try {
                     startScheduler( {
-                        "jobs": [ { "label": "url", "url": "/" & cfmName, "interval": 1, "pause": false } ]
+                        "jobs": [ { "label": "url", "url": "/testAdditional/" & cfmName, "interval": 1, "pause": false } ]
                     } );
 
                     var ran = false;
