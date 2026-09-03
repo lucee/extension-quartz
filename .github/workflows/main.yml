@@ -50,6 +50,7 @@ jobs:
       QUARTZ_ENV_VAR: not used
       LUCEE_TEST_VERSIONS_7: ${{ vars.LUCEE_TEST_VERSIONS_7 }}
     strategy:
+      fail-fast: false
       matrix:
         lucee: ${{ fromJSON(vars.LUCEE_TEST_VERSIONS_7) }}
     services:
@@ -84,6 +85,12 @@ jobs:
         with:
           repository: lucee/lucee
           path: lucee
+
+      - name: Set up JDK 21 for the test runtime
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
 
       - name: Run Lucee Test Suite
         uses: lucee/script-runner@main
