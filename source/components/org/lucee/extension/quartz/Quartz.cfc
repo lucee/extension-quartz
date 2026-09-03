@@ -275,6 +275,14 @@ component extends="QuartzSupport" javaSettings='{
      * in that case the scheduler instance is restarted (the gateway stays up).
      */
     public function loadConfig() {
+        // if the file on disk is byte-for-byte what we last loaded/persisted, there is
+        // nothing to reconcile - return early without touching jobs, listeners or the file
+        var raw = fileRead(variables.configFile);
+        if(!isNull(variables.configRaw) && raw == variables.configRaw) {
+            log log=variables.logName type="debug" text="Quartz Scheduler: config file [#variables.configFile#] unchanged, skipping reload";
+            return getState();
+        }
+
         // capture the current store definition to detect store changes
         var oldStore = variables.configUntranslated.store ?: {};
 
@@ -401,11 +409,14 @@ component extends="QuartzSupport" javaSettings='{
         }
         variables.configUntranslated=data;
         variables.config = resolveEnvVar(data);
-        store(variables.configFile,variables.configUntranslated);
+        // remember exactly what we wrote, so loadConfig() can detect an unchanged file
+        variables.configRaw = store(variables.configFile,variables.configUntranslated);
     }
 
-    public static void function store(configFile,data) {
-        fileWrite(configFile,serializeJSON(var:data,compact:false)); 
+    public static string function store(configFile,data) {
+        var raw=serializeJSON(var:data,compact:false);
+        fileWrite(configFile,raw);
+        return raw;
     }
 
     /**

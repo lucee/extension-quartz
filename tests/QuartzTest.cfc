@@ -146,6 +146,19 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
                 expect( q.getJobs().len() ).toBe( 2 );
             } );
 
+            it( "does not rewrite the config file when nothing changed", function() {
+                var q    = startScheduler( { "jobs": [ compJob() ] } );
+                var path = q.getConfigFile();
+
+                var before = getFileInfo( path ).lastmodified.getTime();
+                sleep( 1100 );
+                expect( q.loadConfig() ).toBe( "running" );
+                var after = getFileInfo( path ).lastmodified.getTime();
+
+                // an unchanged reload must short-circuit before touching the file
+                expect( after ).toBe( before );
+            } );
+
             it( "removes a job dropped from the config file (file is authoritative)", function() {
                 var q = startScheduler( { "jobs": [ compJob(), urlJob() ] } );
                 expect( q.getJobs().len() ).toBe( 2 );
