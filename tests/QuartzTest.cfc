@@ -193,6 +193,21 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
                 expect( q.getListeners().len() ).toBe( 0 );
             } );
 
+            it( "reschedules an orphaned trigger whose JobDetail is missing (e.g. Redis)", function() {
+                // createObject (not `new`) so the inherited Quartz.init() is not invoked
+                var proxy = createObject( "component", "QuartzLoadJobProxy" );
+                var mock  = new QuartzMockScheduler();
+
+                var data = { "label": "orphan", "component": variables.COMP, "cron": "0 0 0 1 1 ? 2099", "pause": false };
+                // existingJobs claims the job exists (a trigger is present), but the mock
+                // returns null for getJobDetail() - the orphaned store-row case
+                var existing = { "#hash( variables.COMP, "quick" )#": { "job": "jobKey", "trigger": "triggerKey" } };
+
+                // must not throw on the null JobDetail; must fall through to scheduleJob()
+                proxy.callLoadJob( mock, data, existing );
+                expect( mock.wasScheduled() ).toBeTrue();
+            } );
+
             it( "throws when the scheduler is not running", function() {
                 var path = tmpConfig( { "jobs": [] } );
                 var q    = new org.lucee.extension.quartz.Quartz( path );

@@ -496,10 +496,20 @@ component extends="QuartzSupport" javaSettings='{
         
         // job exists?
         if(structKeyExists(existingJobs, job.name)) {
-            // different trigger/job?
             var jobKey = existingJobs[job.name].job;
+            var existingTriggerKey = existingJobs[job.name].trigger;
             var jobDetail = variables.scheduler.getJobDetail(jobKey);
-            if(existingJobs[job.name].trigger.name!=trigger.name || !isJobDataMapEqual(jobDetail.getJobDataMap(),job.getJobDataMap())) {
+
+            // A trigger can exist without a matching JobDetail - e.g. an orphaned row in the
+            // Redis/JDBC store, or a null trigger key. The job is then not really loaded, so we
+            // must not read jobDetail. Remove the stale key(s) directly (our own deleteJob()
+            // reads the JobDetail that is missing here) and fall through to scheduleJob().
+            if(isNull(jobDetail) || isNull(existingTriggerKey)) {
+                if(!isNull(existingTriggerKey)) variables.scheduler.unscheduleJob(existingTriggerKey);
+                variables.scheduler.deleteJob(jobKey);
+            }
+            // different trigger/job? -> delete so it gets rescheduled below
+            else if(existingTriggerKey.name!=trigger.name || !isJobDataMapEqual(jobDetail.getJobDataMap(),job.getJobDataMap())) {
                 deleteJob(jobKey);
             }
             else {
