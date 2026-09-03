@@ -760,13 +760,16 @@ component extends="QuartzSupport" javaSettings='{
 	}
 	public static array function getStates() {
         if(isNull(static.states)) {
-            local.names=[];
-            // TriggerState is the nested enum org.quartz.Trigger.TriggerState; `import org.quartz.*`
-            // only resolves top-level types, so reference it by its binary name (Trigger$TriggerState).
-            loop array=org.quartz.Trigger$TriggerState::values() item="local.enum" {
-                arrayAppend(names, enum.name())
+            try {
+                local.names=[];
+                loop array=org.quartz.Trigger$TriggerState::values() item="local.enum" {
+                    arrayAppend(names, enum.name())
+                }
+                static.states=local.names;
             }
-            static.states=local.names;
+            catch(e) {
+                static.states=["NONE","NORMAL","PAUSED","COMPLETE","ERROR","BLOCKED"];
+            }
         }
         return static.states;
 	}
