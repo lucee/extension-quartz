@@ -266,6 +266,109 @@ component extends="QuartzSupport" javaSettings='{
         }
 	}
 
+    /**
+     * Re-reads the config file from disk and applies it to the running scheduler
+     * without restarting the event gateway. Jobs and listeners are reconciled live
+     * (added, updated and - when the file is authoritative - removed).
+     *
+     * A change to the `store` definition cannot be applied to a live scheduler, so
+     * in that case the scheduler instance is restarted (the gateway stays up).
+     */
+    public function loadConfig() {
+        // capture the current store definition to detect store changes
+        var oldStore = variables.configUntranslated.store ?: {};
+
+        // re-read the config file from disk into variables.config / variables.configUntranslated
+        _init(variables.configFile, variables);
+
+        var newStore = variables.configUntranslated.store ?: {};
+
+        // a changed store cannot be swapped on a live scheduler -> restart the instance
+        if(serializeJSON(oldStore) != serializeJSON(newStore)) {
+            log log=variables.logName type="info" text="Quartz Scheduler: store configuration changed, restarting scheduler to apply the new config";
+            restart();
+            return getState();
+        }
+
+        lock name="quartz-scheduler" {
+            if(isNull(variables.scheduler) || variables.scheduler.isShutdown() || !variables.scheduler.isStarted()) {
+                throw(
+                    type="Schedule.SchedulerNotRunning",
+                    message="Quartz Scheduler is not running",
+                    detail="loadConfig() can only reconcile a running scheduler. Current state is [#getState()#]."
+                );
+            }
+            var hasStore = !isNull(variables.config.store.type);
+
+            // load listeners
+            if(!isNull(variables.config.listeners)) {
+                var existingListener=getListeners(true);
+                var isPrimaryFile = (variables.config.primary ?: (hasStore ? "store" : "file")) == "file";
+
+                // if file is primary, remove all existing listeners first so config is always authoritative
+                if(isPrimaryFile) {
+                    loop struct=existingListener index="local.name" {
+                        variables.scheduler.getListenerManager().removeJobListener(name);
+                    }
+                    existingListener = {};
+                }
+
+                loop array=variables.config.listeners item="local.listenerData" {
+                    try {
+                        loadListener(listenerData,existingListener);
+                    }
+                    catch(ex) {
+                        log log=variables.logName type="error" exception=ex;
+                    }
+                }
+            }
+
+            // load jobs
+            var isPrimaryFile = (variables.config.primary ?: (hasStore ? "store" : "file")) == "file";
+            if(!isNull(variables.config.jobs)) {
+                var existingJobs=getExistingJobs();
+
+                // we only load jobs from local, if there is no store or there are no jobs in store
+                if(!hasStore || isPrimaryFile || structCount(existingJobs)==0) {
+
+                    // handle deletions first if file is primary, so jobs removed from the
+                    // config are also removed from the running scheduler on reload
+                    if (isPrimaryFile) {
+                        // create job ids from config
+                        var configJobIds = {};
+                        loop array=variables.config.jobs item="local.jobData" {
+                            if(structKeyExists(jobData, "slug")) {
+                                configJobIds[hash(jobData.slug, "quick")] = true;
+                            }
+                            else if(structKeyExists(jobData, "component")) {
+                                configJobIds[hash(jobData.component, "quick")] = true;
+                            }
+                            else if(structKeyExists(jobData, "url")) {
+                                configJobIds[hash(jobData.url, "quick")] = true;
+                            }
+                        }
+                        loop collection=existingJobs item="local.key" {
+                            if (!structKeyExists(configJobIds, key)) deleteJob(existingJobs[key].job);
+                        }
+                    }
+                    // update or add jobs
+                    loop array=variables.config.jobs item="local.jobData" {
+                        try {
+                            loadJob(jobData,existingJobs);
+                        }
+                        catch(ex) {
+                            log log=variables.logName type="error" exception=ex;
+                        }
+                    }
+                }
+            }
+            // persist the reconciled state back to the config file
+            sync(true);
+            log log=variables.logName type="info" text="Quartz Scheduler: reloaded config file [#variables.configFile#]";
+        }
+        return getState();
+    }
+
     public function addListener(listenerData) {
         var existingListener = getListeners(true);
         loadListener(listenerData, existingListener);
@@ -715,6 +818,9 @@ component extends="QuartzSupport" javaSettings='{
         if("scheduler"==action) {
             setVariable(data.variable, this);
             return true;
+        }
+        if("reload"==action || "loadconfig"==action) {
+            return loadConfig();
         }
         if("updatestore"==action) {
             stop();

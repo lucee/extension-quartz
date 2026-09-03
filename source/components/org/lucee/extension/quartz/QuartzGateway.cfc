@@ -109,6 +109,10 @@ component {
         start();
 	}
 
+	public function loadConfig() {
+        if(!isNull(variables.instance)) return variables.instance.loadConfig();
+	}
+
 	public string function getState() {
 		if(isNull(variables.instance)) return "stopped";
 		return variables.instance.getState();
