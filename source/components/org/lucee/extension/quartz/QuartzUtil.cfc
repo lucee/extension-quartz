@@ -316,6 +316,20 @@ component {
         return true;
     }
 
+    /**
+     * Resolves the request timeout (in seconds) from a job data map.
+     * Accepts the native `timeout` key or the classic cfschedule `requestTimeOut` key.
+     * Falls back to defaultTimeout when the value is missing or not a positive number.
+     *
+     * @dataMap The JobDataMap (or struct) holding the job configuration
+     * @defaultTimeout The timeout in seconds to use when none is configured (default 50)
+     */
+    public static numeric function resolveTimeout(required dataMap, numeric defaultTimeout=50) {
+        var raw=dataMap.containsKey("timeout")?dataMap.get("timeout"):(dataMap.containsKey("requestTimeOut")?dataMap.get("requestTimeOut"):"");
+        var timeout=isNumeric(raw)?val(raw):arguments.defaultTimeout;
+        return timeout>0?timeout:arguments.defaultTimeout;
+    }
+
     public static function getListeners(quartz) {
         var raw=quartz.getListeners();
         var config=quartz.getConfig();

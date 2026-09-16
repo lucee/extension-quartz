@@ -14,19 +14,25 @@
  *    - "url": the URL to call, either absolute (http://example.com) or relative (/path/file.cfm) (required)
  *    - "label": descriptive name for logging purposes (optional)
  *    - "log": custom log name (defaults to "scheduler" if not specified)
- * 
+ *    - "timeout": maximum time in seconds the call may take before it is aborted (optional, defaults to 50).
+ *                 For absolute http(s) URLs it is applied to the request directly; for relative/internal URLs it
+ *                 bounds the job's own request, so Lucee's request-timeout watchdog terminates a hung call. Either
+ *                 way it protects the scheduler from a request that never returns, which for a StatefulURLJob would
+ *                 otherwise hold the job and block every subsequent trigger.
+ *
  * Example configuration:
  * {
  *   "label": "hourly data refresh",
  *   "url": "/tasks/refresh-data.cfm",
  *   "cron": "0 0 * * * ?",
+ *   "timeout": 30,
  *   "pause": false
  * }
- * 
+ *
  * @implementsJava org.quartz.Job
  */
 component implements="JavaSettings" implementsJava="org.quartz.Job"  {
-    
+
     /**
      * Required method for the org.quartz.Job interface
      * 
@@ -45,16 +51,19 @@ component implements="JavaSettings" implementsJava="org.quartz.Job"  {
             var logName=dataMap.getString("log");
             if(isNull(logName)) local.logName="scheduler";
             var label=dataMap.getString("label");
-            
-            log log=logName type="debug" text="calling url [#_url#] from job [#label?:""#]";
-            
+            var timeout=QuartzUtil::resolveTimeout(dataMap);
+
+            log log=logName type="debug" text="calling url [#_url#] from job [#label?:""#] with timeout [#timeout#s]";
+
             if(left(_url,7)=="http://" || left(_url,8)=="https://") {
-            http url=_url throwOnError=true result="local.res";
+            http url=_url throwOnError=true result="local.res" timeout=timeout;
             }
             else {
                 var index=find("?", _url);
                 var template=index==0?_url:left(_url,index-1);
                 var qs=index==0?"":mid(_url,index+1);
+                // internalRequest has no per-call timeout; bound the job request so a hung call is terminated
+                setting requesttimeout=timeout;
                 var res=internalRequest(
                     template:template,
                     urls=qs,

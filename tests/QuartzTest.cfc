@@ -53,6 +53,68 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
             } );
         } );
 
+        describe( "QuartzUtil::resolveTimeout", function() {
+
+            // the job data map at runtime is a Quartz JobDataMap (a java.util.Map); emulate it
+            // here with a plain java.util.HashMap so the containsKey()/get() calls are exercised
+            // exactly as they are in production.
+            it( "defaults to 50 when no timeout is configured", function() {
+                var map = new java.util.HashMap();
+                map.put( "url", "http://example.com" );
+
+                expect( resolveTimeout( map ) ).toBe( 50 );
+            } );
+
+            it( "reads the native 'timeout' key", function() {
+                var map = new java.util.HashMap();
+                map.put( "timeout", 30 );
+
+                expect( resolveTimeout( map ) ).toBe( 30 );
+            } );
+
+            it( "falls back to the classic 'requestTimeOut' key", function() {
+                var map = new java.util.HashMap();
+                map.put( "requestTimeOut", 15 );
+
+                expect( resolveTimeout( map ) ).toBe( 15 );
+            } );
+
+            it( "prefers 'timeout' over 'requestTimeOut'", function() {
+                var map = new java.util.HashMap();
+                map.put( "timeout", 30 );
+                map.put( "requestTimeOut", 15 );
+
+                expect( resolveTimeout( map ) ).toBe( 30 );
+            } );
+
+            it( "accepts a numeric value held as a string", function() {
+                var map = new java.util.HashMap();
+                map.put( "timeout", "45" );
+
+                expect( resolveTimeout( map ) ).toBe( 45 );
+            } );
+
+            it( "ignores a non-numeric value and uses the default", function() {
+                var map = new java.util.HashMap();
+                map.put( "timeout", "soon" );
+
+                expect( resolveTimeout( map ) ).toBe( 50 );
+            } );
+
+            it( "ignores a non-positive value and uses the default", function() {
+                var map = new java.util.HashMap();
+                map.put( "timeout", 0 );
+
+                expect( resolveTimeout( map ) ).toBe( 50 );
+            } );
+
+            it( "honors a custom default when nothing is configured", function() {
+                var map = new java.util.HashMap();
+
+                expect( resolveTimeout( map, 120 ) ).toBe( 120 );
+            } );
+        } );
+
         describe( "scheduler lifecycle & job registration", function() {
 
             beforeEach( function() { variables.instances = []; } );
@@ -306,6 +368,13 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
     // an uninitialized Quartz instance, for calling static helpers without starting a scheduler
     private any function quartz() {
         return createObject( "component", "org.lucee.extension.quartz.Quartz" );
+    }
+
+    // delegate to the static QuartzUtil helper under test
+    private numeric function resolveTimeout( required any dataMap, numeric defaultTimeout ) {
+        if ( isNull( arguments.defaultTimeout ) )
+            return org.lucee.extension.quartz.QuartzUtil::resolveTimeout( arguments.dataMap );
+        return org.lucee.extension.quartz.QuartzUtil::resolveTimeout( arguments.dataMap, arguments.defaultTimeout );
     }
 
     private string function tmpConfig( required struct data ) {

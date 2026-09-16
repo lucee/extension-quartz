@@ -1,30 +1,31 @@
 /**
  * StatefulURLJob - A stateful implementation of URLJob that prevents concurrent executions
- * 
- * This component extends the standard URLJob but implements the org.quartz.StatefulJob interface,
+ *
+ * This component mirrors the standard URLJob but implements the org.quartz.StatefulJob interface,
  * which signals to Quartz that instances of this job should not be executed concurrently.
- * 
+ *
  * Use this job type when:
  * - Your URL job might run longer than its trigger interval
  * - You need to ensure a job completes before the next execution begins
  * - You want to prevent job overlapping to avoid resource conflicts
- * 
+ *
  * When a StatefulURLJob is running and its trigger fires again, the second execution
- * is skipped until the current execution completes.
- * 
- * @extends URLJob
- * @implements org.quartz.StatefulJob
+ * is skipped until the current execution completes. Because a hung request would hold the
+ * job and block every subsequent trigger, an optional "timeout" (in seconds, default 50)
+ * bounds the call so an unresponsive host cannot stall the schedule indefinitely.
+ *
+ * @implementsJava org.quartz.StatefulJob
  */
 component implements="JavaSettings" implementsJava="org.quartz.StatefulJob"  {
-    
+
     /**
      * Required method for the org.quartz.Job interface
-     * 
+     *
      * This method is called by the Quartz scheduler when the job is triggered.
      * It makes an HTTP request to the URL specified in the job configuration.
      * For absolute URLs (http://, https://), it makes a standard HTTP request.
      * For relative URLs (/path/file.cfm), it uses internalRequest to ensure execution on the current server.
-     * 
+     *
      * @param context The JobExecutionContext provided by Quartz scheduler containing job details and configuration
      */
     public void function execute( context) {
@@ -35,23 +36,26 @@ component implements="JavaSettings" implementsJava="org.quartz.StatefulJob"  {
             var logName=dataMap.getString("log");
             if(isNull(logName)) local.logName="scheduler";
             var label=dataMap.getString("label");
-            
-            log log=logName type="debug" text="calling url [#_url#] from job [#label?:""#]";
-            
+            var timeout=QuartzUtil::resolveTimeout(dataMap);
+
+            log log=logName type="debug" text="calling url [#_url#] from job [#label?:""#] with timeout [#timeout#s]";
+
             if(left(_url,7)=="http://" || left(_url,8)=="https://") {
-            http url=_url throwOnError=true result="local.res";
+            http url=_url throwOnError=true result="local.res" timeout=timeout;
             }
             else {
                 var index=find("?", _url);
                 var template=index==0?_url:left(_url,index-1);
                 var qs=index==0?"":mid(_url,index+1);
+                // internalRequest has no per-call timeout; bound the job request so a hung call is terminated
+                setting requesttimeout=timeout;
                 var res=internalRequest(
                     template:template,
                     urls=qs,
                     throwonerror:true);
             }
-            
-            
+
+
             if(res.status_code>=200 && res.status_code<300) {
                 log log=logName type="debug" text="successfully executed [#_url#]";
             }
