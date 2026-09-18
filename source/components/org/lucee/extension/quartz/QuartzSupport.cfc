@@ -302,6 +302,7 @@ abstract component {
             meta["numberOfJobsExecuted"] = raw.getNumberOfJobsExecuted();
             meta["threadPoolClass"] = raw.getThreadPoolClass().getName();
             meta["threadPoolSize"] = raw.getThreadPoolSize();
+            if(!isNull(variables.batchTriggerAcquisitionMaxCount)) meta["batchTriggerAcquisitionMaxCount"] = variables.batchTriggerAcquisitionMaxCount;
             meta["inStandbyMode"] = raw.isInStandbyMode();
             meta["schedulerRemote"] = raw.isSchedulerRemote();
             meta["shutdown"] = raw.isShutdown();

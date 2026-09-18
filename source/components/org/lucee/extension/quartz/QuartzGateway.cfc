@@ -2,6 +2,16 @@ component {
 
     static {
         static.DEFAULT_CONFIG='{
+    /* Scheduler concurrency (all optional):
+       "threadPoolCount": 10,                     // worker threads per node (org.quartz.threadPool.threadCount)
+       "threadPoolPriority": 5,                   // worker thread priority
+       "batchTriggerAcquisitionMaxCount": 10,     // due triggers acquired+fired per cycle; defaults to threadPoolCount.
+                                                  //   Quartz defaults this to 1, which serializes dispatch per node.
+       "batchTriggerAcquisitionFireAheadTimeWindow": 0,
+       "misfirePolicy": "doNothing",              // global default; per-job "misfirePolicy" overrides it.
+                                                  //   cron: smart|doNothing|fireAndProceed|ignoreMisfires (default doNothing)
+                                                  //   interval: smart|doNothing|fireNow|ignoreMisfires (default smart)
+    */
     "jobs": [
         /*{
             "label": "Example for every 60 seconds",

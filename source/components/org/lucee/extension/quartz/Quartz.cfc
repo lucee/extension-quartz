@@ -90,11 +90,19 @@ component extends="QuartzSupport" javaSettings='{
                 props.put("org.quartz.scheduler.instanceId", "AUTO");
 
                 // Configure the thread pool
+                var threadCount = trim(variables.config.threadPoolCount?:"10");
                 props.put("org.quartz.threadPool.class", "org.quartz.simpl.SimpleThreadPool");
-                props.put("org.quartz.threadPool.threadCount", trim(variables.config.threadPoolCount?:"10"));
+                props.put("org.quartz.threadPool.threadCount", threadCount);
                 props.put("org.quartz.threadPool.threadPriority", trim(variables.config.threadPoolPriority?:"5"));
                 props.put("org.quartz.threadPool.threadsInheritContextClassLoaderOfInitializingThread", "true");
-                
+
+                // Due triggers acquired+fired per cycle; Quartz defaults to 1, serializing dispatch per node. Default to threadCount. (LDEV-6468)
+                var batchCount = trim(variables.config.batchTriggerAcquisitionMaxCount ?: threadCount);
+                props.put("org.quartz.scheduler.batchTriggerAcquisitionMaxCount", batchCount);
+                props.put("org.quartz.scheduler.batchTriggerAcquisitionFireAheadTimeWindow", trim(variables.config.batchTriggerAcquisitionFireAheadTimeWindow ?: "0"));
+                variables.batchTriggerAcquisitionMaxCount = batchCount; // surfaced in getMetadataAsStruct()
+                log log=variables.logName type="info" text="Quartz Scheduler: threadCount=#threadCount#, batchTriggerAcquisitionMaxCount=#batchCount#";
+
                 var hasStore=readJobs;
                 // store
                 if(!isNull(variables.config.store.type)) {
@@ -629,25 +637,72 @@ component extends="QuartzSupport" javaSettings='{
 
         // shedule interval
                     if(!isNull(jobData.interval)) {
-                        
+                        var simpleSchedule = SimpleScheduleBuilder::simpleSchedule()
+                            .withIntervalInSeconds(jobData.interval)
+                            .repeatForever();
+                        // interval default keeps Quartz's smart policy unless overridden
+                        applySimpleMisfirePolicy(simpleSchedule, resolveMisfirePolicy(jobData, "smart"));
                         builder
                         .withIdentity(hash(jobData.id&":"&jobData.interval,"quick"), "cfm")
-                        .withSchedule(
-                            SimpleScheduleBuilder::simpleSchedule()
-                            .withIntervalInSeconds(jobData.interval)
-                            .repeatForever()
-                        );
+                        .withSchedule(simpleSchedule);
                     }
         // shedule cron
                     else if(!isNull(jobData.cron)) {
+                        var cronSchedule = CronScheduleBuilder::cronSchedule(jobData.cron);
+                        // cron default "doNothing" (wait for next fire); Quartz's smart policy collapses missed cron fires and drops the rest. (LDEV-6468)
+                        applyCronMisfirePolicy(cronSchedule, resolveMisfirePolicy(jobData, "doNothing"));
                         builder
                         .withIdentity(hash(jobData.id&":"&jobData.cron,"quick"), "cfm")
-                        .withSchedule(CronScheduleBuilder::cronSchedule(jobData.cron));
+                        .withSchedule(cronSchedule);
                     }
                     else {
             throw "invalid job defintion [#serializeJSON(jobData)#], missing `cron` or `interval`";
         }
         return builder.build();
+    }
+
+    /**
+     * Resolve the misfire policy for a job: per-job overrides global config, which overrides the
+     * schedule-type default. Values (case-insensitive): "smart", "doNothing", "fireAndProceed"
+     * (alias "fireOnceNow"/"fireNow"), "ignoreMisfires".
+     */
+    private string function resolveMisfirePolicy(jobData, string defaultPolicy) {
+        return trim(jobData.misfirePolicy ?: variables.config.misfirePolicy ?: arguments.defaultPolicy);
+    }
+
+    // Apply a misfire policy to a CronScheduleBuilder. "smart" leaves Quartz's default untouched.
+    private function applyCronMisfirePolicy(schedule, string policy) {
+        switch(lCase(trim(arguments.policy))) {
+            case "donothing":
+                schedule.withMisfireHandlingInstructionDoNothing();
+                break;
+            case "fireandproceed": case "fireoncenow": case "firenow":
+                schedule.withMisfireHandlingInstructionFireAndProceed();
+                break;
+            case "ignoremisfires":
+                schedule.withMisfireHandlingInstructionIgnoreMisfires();
+                break;
+            // "smart" (or anything unrecognized) => leave Quartz's SMART_POLICY default
+        }
+        return schedule;
+    }
+
+    // Apply a misfire policy to a SimpleScheduleBuilder. "smart" leaves Quartz's default untouched.
+    private function applySimpleMisfirePolicy(schedule, string policy) {
+        switch(lCase(trim(arguments.policy))) {
+            case "donothing":
+                // simple triggers have no do-nothing; keep remaining count without catching up
+                schedule.withMisfireHandlingInstructionNextWithRemainingCount();
+                break;
+            case "fireandproceed": case "fireoncenow": case "firenow":
+                schedule.withMisfireHandlingInstructionFireNow();
+                break;
+            case "ignoremisfires":
+                schedule.withMisfireHandlingInstructionIgnoreMisfires();
+                break;
+            // "smart" (or anything unrecognized) => leave Quartz's SMART_POLICY default
+        }
+        return schedule;
     }
 
 	public void function stop() {
