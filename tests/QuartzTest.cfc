@@ -361,6 +361,84 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
                 }
             } );
         } );
+
+        describe( "thread pool & dispatch throughput config (LDEV-6468)", function() {
+
+            beforeEach( function() { variables.instances = []; } );
+            afterEach( function() { stopAll(); } );
+
+            it( "defaults the thread pool to 10 when threadPoolCount is not set", function() {
+                var q = startScheduler( { "jobs": [] } );
+                expect( q.getMetadataAsStruct().threadPoolSize ).toBe( 10 );
+            } );
+
+            it( "honors a configured threadPoolCount", function() {
+                var q = startScheduler( { "jobs": [], "threadPoolCount": 3 } );
+                expect( q.getMetadataAsStruct().threadPoolSize ).toBe( 3 );
+            } );
+
+            it( "defaults batch acquisition to the thread count (Quartz default of 1 serialized dispatch)", function() {
+                var q = startScheduler( { "jobs": [], "threadPoolCount": 4 } );
+                // stringify: the resolved value is stored as configured (a string) via props
+                expect( q.getMetadataAsStruct().batchTriggerAcquisitionMaxCount & "" ).toBe( "4" );
+            } );
+
+            it( "honors an explicit batchTriggerAcquisitionMaxCount", function() {
+                var q = startScheduler( { "jobs": [], "threadPoolCount": 4, "batchTriggerAcquisitionMaxCount": 2 } );
+                expect( q.getMetadataAsStruct().batchTriggerAcquisitionMaxCount & "" ).toBe( "2" );
+            } );
+        } );
+
+        describe( "trigger misfire policy (LDEV-6468)", function() {
+
+            beforeEach( function() { variables.instances = []; } );
+            afterEach( function() { stopAll(); } );
+
+            it( "defaults a cron trigger to DO_NOTHING (not Quartz's smart policy, which drops missed fires)", function() {
+                var t = startScheduler( { "jobs": [ cronJob() ] } ).getTriggers()[ 1 ];
+                expect( t.getMisfireInstruction() ).toBe( misfireConstants( t ).CRON_DO_NOTHING );
+            } );
+
+            it( "lets a cron trigger opt back into the smart policy", function() {
+                var t = startScheduler( { "jobs": [ cronJob( misfirePolicy = "smart" ) ] } ).getTriggers()[ 1 ];
+                expect( t.getMisfireInstruction() ).toBe( misfireConstants( t ).SMART );
+            } );
+
+            it( "maps cron 'fireAndProceed' to FIRE_ONCE_NOW", function() {
+                var t = startScheduler( { "jobs": [ cronJob( misfirePolicy = "fireAndProceed" ) ] } ).getTriggers()[ 1 ];
+                expect( t.getMisfireInstruction() ).toBe( misfireConstants( t ).CRON_FIRE_ONCE );
+            } );
+
+            it( "maps cron 'ignoreMisfires' to the ignore policy", function() {
+                var t = startScheduler( { "jobs": [ cronJob( misfirePolicy = "ignoreMisfires" ) ] } ).getTriggers()[ 1 ];
+                expect( t.getMisfireInstruction() ).toBe( misfireConstants( t ).IGNORE );
+            } );
+
+            it( "leaves an interval trigger on the smart policy by default (unchanged behavior)", function() {
+                var t = startScheduler( { "jobs": [ intervalJob() ] } ).getTriggers()[ 1 ];
+                expect( t.getMisfireInstruction() ).toBe( misfireConstants( t ).SMART );
+            } );
+
+            it( "maps interval 'doNothing' to NEXT_WITH_REMAINING_REPEAT_COUNT", function() {
+                var t = startScheduler( { "jobs": [ intervalJob( misfirePolicy = "doNothing" ) ] } ).getTriggers()[ 1 ];
+                expect( t.getMisfireInstruction() ).toBe( misfireConstants( t ).SIMPLE_NEXT_REM );
+            } );
+
+            it( "maps interval 'fireNow' to FIRE_NOW", function() {
+                var t = startScheduler( { "jobs": [ intervalJob( misfirePolicy = "fireNow" ) ] } ).getTriggers()[ 1 ];
+                expect( t.getMisfireInstruction() ).toBe( misfireConstants( t ).SIMPLE_FIRE_NOW );
+            } );
+
+            it( "applies a global misfirePolicy when the job declares none", function() {
+                var t = startScheduler( { "misfirePolicy": "ignoreMisfires", "jobs": [ cronJob() ] } ).getTriggers()[ 1 ];
+                expect( t.getMisfireInstruction() ).toBe( misfireConstants( t ).IGNORE );
+            } );
+
+            it( "lets a per-job misfirePolicy override the global one", function() {
+                var t = startScheduler( { "misfirePolicy": "ignoreMisfires", "jobs": [ cronJob( misfirePolicy = "smart" ) ] } ).getTriggers()[ 1 ];
+                expect( t.getMisfireInstruction() ).toBe( misfireConstants( t ).SMART );
+            } );
+        } );
     }
 
     // ---- helpers -----------------------------------------------------------
@@ -408,5 +486,46 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
 
     private struct function urlJob() {
         return { "label": "url", "url": "/never.cfm", "interval": 3600, "startAt": "2099-01-01", "pause": true };
+    }
+
+    // a far-future cron job (never fires during the test) with an optional misfire policy
+    private struct function cronJob( string cron = "0 0 0 1 1 ? 2099", string misfirePolicy = "", boolean pause = true ) {
+        var j = { "label": "cron", "component": variables.COMP, "cron": arguments.cron, "pause": arguments.pause };
+        if ( len( arguments.misfirePolicy ) ) j[ "misfirePolicy" ] = arguments.misfirePolicy;
+        return j;
+    }
+
+    // a far-future interval job (never fires during the test) with an optional misfire policy
+    private struct function intervalJob( numeric interval = 3600, string misfirePolicy = "", boolean pause = true ) {
+        var j = { "label": "int", "component": variables.COMP, "interval": arguments.interval, "startAt": "2099-01-01", "pause": arguments.pause };
+        if ( len( arguments.misfirePolicy ) ) j[ "misfirePolicy" ] = arguments.misfirePolicy;
+        return j;
+    }
+
+    /**
+     * The Quartz misfire-instruction constants, so the tests assert against the real API values
+     * rather than magic numbers. Quartz ships inside the extension's OSGi bundle, so the classes
+     * are loaded through the classloader of a live trigger (passed in) - the same bundle that
+     * created it - rather than createObject("java",...), which resolves against Lucee's loader and
+     * would not find org.quartz.*. Cached after the first call.
+     */
+    private struct function misfireConstants( required any liveTrigger ) {
+        if ( isNull( variables.mi ) ) {
+            var loader  = arguments.liveTrigger.getClass().getClassLoader();
+            var trigger = loader.loadClass( "org.quartz.Trigger" );
+            var cron    = loader.loadClass( "org.quartz.CronTrigger" );
+            var simple  = loader.loadClass( "org.quartz.SimpleTrigger" );
+            // note: not named "val" - that collides with Lucee's built-in Val() function
+            var readConst = function( cls, field ) { return cls.getField( field ).getInt( nullValue() ); };
+            variables.mi = {
+                "SMART"           : readConst( trigger, "MISFIRE_INSTRUCTION_SMART_POLICY" ),
+                "IGNORE"          : readConst( trigger, "MISFIRE_INSTRUCTION_IGNORE_MISFIRE_POLICY" ),
+                "CRON_DO_NOTHING" : readConst( cron,    "MISFIRE_INSTRUCTION_DO_NOTHING" ),
+                "CRON_FIRE_ONCE"  : readConst( cron,    "MISFIRE_INSTRUCTION_FIRE_ONCE_NOW" ),
+                "SIMPLE_FIRE_NOW" : readConst( simple,  "MISFIRE_INSTRUCTION_FIRE_NOW" ),
+                "SIMPLE_NEXT_REM" : readConst( simple,  "MISFIRE_INSTRUCTION_RESCHEDULE_NEXT_WITH_REMAINING_COUNT" )
+            };
+        }
+        return variables.mi;
     }
 }
