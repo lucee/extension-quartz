@@ -49,6 +49,9 @@ jobs:
     env:
       QUARTZ_ENV_VAR: not used
       LUCEE_TEST_VERSIONS_7: ${{ vars.LUCEE_TEST_VERSIONS_7 }}
+      # tests with the Redis job store (tests/QuartzTest.cfc) use this server; they are skipped if REDIS_SERVER is not set
+      REDIS_SERVER: localhost
+      REDIS_PORT: 6379
     strategy:
       fail-fast: false
       matrix:
@@ -58,6 +61,15 @@ jobs:
         image: fclairamb/minio-github-actions
         ports:
           - 9000:9000
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
     steps:
       - uses: actions/checkout@v4
 

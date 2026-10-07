@@ -439,9 +439,125 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
                 expect( t.getMisfireInstruction() ).toBe( misfireConstants( t ).SMART );
             } );
         } );
+
+        describe( "trigger listing getTriggersAsQuery() (LDEV-6531)", function() {
+
+            beforeEach( function() { variables.instances = []; } );
+            afterEach( function() { stopAll(); } );
+
+            // in-memory store: no bulk read in the job store, so this is the fallback through the scheduler
+            it( "lists triggers with job, schedule and state (in-memory store)", function() {
+                var q = startScheduler( { "jobs": listingJobs( 5 ) } );
+
+                expect( q.getJobStore().getClass().getName() ).toInclude( "RAMJobStore" );
+                assertListing( q, 5 );
+            } );
+
+            it( "lists no triggers for an empty scheduler", function() {
+                var q = startScheduler( { "jobs": [] } );
+                expect( q.getTriggersAsQuery( false ).recordCount ).toBe( 0 );
+            } );
+
+            // Redis store: the job store reads everything in one go (RedisJobStore.getAllTriggerDetails()).
+            // Needs a Redis server: REDIS_SERVER (and optionally REDIS_PORT) must be set, like the CI service does.
+            it( title="lists triggers with job, schedule and state (Redis store, bulk read)", skip=!hasRedis(), body=function() {
+                var q = startRedisScheduler( listingJobs( 25 ) );
+                try {
+                    expect( q.getJobStore().getClass().getName() ).toInclude( "RedisJobStore" );
+
+                    // the library in use must have the bulk read, otherwise this test would only test the fallback
+                    var details = q.getJobStore().getAllTriggerDetails();
+                    expect( details.size() ).toBe( 25 );
+
+                    assertListing( q, 25 );
+                }
+                finally {
+                    // do not leave the jobs in Redis
+                    try { q.getJobStore().clearAllSchedulingData(); } catch ( any e ) {}
+                }
+            } );
+        } );
     }
 
     // ---- helpers -----------------------------------------------------------
+
+    private boolean function hasRedis() {
+        return len( server.system.environment.REDIS_SERVER ?: "" ) > 0;
+    }
+
+    // a scheduler with a Redis job store (the server from the environment, unique key prefix)
+    private function startRedisScheduler( required array jobs ) {
+        return startScheduler( {
+            "jobs": arguments.jobs,
+            "store": {
+                "type": "redis",
+                "host": server.system.environment.REDIS_SERVER,
+                "port": val( server.system.environment.REDIS_PORT ?: 6379 ),
+                "keyPrefix": "QT" & createUniqueId() & "_"
+            }
+        } );
+    }
+
+    // n far-future jobs, every third one paused, every second one a cron job (the others interval jobs)
+    private array function listingJobs( required numeric n ) {
+        var jobs = [];
+        loop from=1 to=arguments.n index="local.i" {
+            var job = { "label": "job " & i, "slug": "listing-job-" & i, "component": variables.COMP, "pause": ( i mod 3 == 0 ) };
+            if ( i mod 2 == 0 ) job[ "cron" ] = "0 0 0 1 1 ? 2099";
+            else {
+                job[ "interval" ] = 3600;
+                job[ "startAt" ] = "2099-01-01";
+            }
+            arrayAppend( jobs, job );
+        }
+        return jobs;
+    }
+
+    // getTriggersAsQuery() must list every trigger once, with the data of its job, schedule and state;
+    // checked against what the job store itself returns for each trigger
+    private void function assertListing( required any q, required numeric expectedCount ) {
+        var qry = arguments.q.getTriggersAsQuery( false );
+        expect( qry.recordCount ).toBe( arguments.expectedCount );
+
+        var store = arguments.q.getJobStore();
+        var jobNames = {};
+        loop array=arguments.q.getJobs() item="local.j" { jobNames[ j.getKey().getName() ] = j; }
+
+        var seen = {};
+        loop query=qry {
+            expect( structKeyExists( seen, qry.jobName ) ).toBeFalse( "job listed twice: " & qry.jobName );
+            seen[ qry.jobName ] = true;
+
+            var job = jobNames[ qry.jobName ];
+            var dataMap = job.getJobDataMap();
+            expect( qry.jobLabel ).toBe( dataMap[ "label" ] );
+            expect( qry.slug ).toBe( dataMap[ "slug" ] );
+            expect( qry.endpoint ).toBe( dataMap[ "component" ] );
+            expect( qry.jobGroup ).toBe( job.getGroup() );
+
+            // listing jobs: the number in the label tells the expected kind and state
+            var idx = val( listLast( qry.jobLabel, " " ) );
+            expect( qry.state ).toBe( idx mod 3 == 0 ? "PAUSED" : "NORMAL" );
+            expect( qry.scheduleType ).toBe( idx mod 2 == 0 ? "cron" : "interval" );
+            expect( qry.schedule ).toBe( idx mod 2 == 0 ? "0 0 0 1 1 ? 2099" : "3600" );
+
+        }
+        expect( structCount( seen ) ).toBe( arguments.expectedCount );
+
+        // every trigger of the store is in the listing, with the state of the store
+        loop array=arguments.q.getTriggers() item="local.t" {
+            var found = false;
+            loop query=qry {
+                if ( qry.jobName == t.getJobKey().getName() ) {
+                    found = true;
+                    expect( qry.state ).toBe( store.getTriggerState( t.getKey() ).name() );
+                    expect( dateCompare( qry.nextFireTime, t.getNextFireTime() ) ).toBe( 0 );
+                    break;
+                }
+            }
+            expect( found ).toBeTrue( "trigger missing in listing: " & t.getKey() );
+        }
+    }
 
     // an uninitialized Quartz instance, for calling static helpers without starting a scheduler
     private any function quartz() {
