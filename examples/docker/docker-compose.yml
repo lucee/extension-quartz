@@ -1,0 +1,14 @@
+# docker compose up -d --build   (run mvn clean install in the repo root first, the extension is taken from target/)
+# then open http://localhost:8857/
+services:
+  lucee:
+    build:
+      context: ../..
+      dockerfile: examples/docker/Dockerfile
+    image: lucee-quartz-mcp:latest
+    environment:
+      - LUCEE_ADMIN_PASSWORD=qwerty
+      # the bearer secret of the MCP interface, used by config.json (${QUARTZ_MCP_SECRET}) and by www/index.cfm
+      - QUARTZ_MCP_SECRET=${QUARTZ_MCP_SECRET:-quartz-example-secret}
+    ports:
+      - "8857:8888"

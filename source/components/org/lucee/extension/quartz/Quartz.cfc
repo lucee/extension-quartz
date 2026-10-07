@@ -408,13 +408,12 @@ component extends="QuartzSupport" javaSettings='{
     }
 
     private function sync(boolean async=false) {
-        var data=[:];
+        // start from the current config, so settings we do not manage here (thread pool, mcp, ...) survive
+        var data=duplicate(variables.configUntranslated);
         data["jobs"]=exportJobs();
         data["listeners"]=variables.configUntranslated.listeners?:[];
         data["store"]=variables.configUntranslated.store?:{};
-        if(structKeyExists(variables.configUntranslated,"primary") && !isEmpty(variables.configUntranslated.primary)) {
-            data["primary"]=variables.configUntranslated.primary;
-        }
+        if(structKeyExists(data,"primary") && isEmpty(data.primary)) structDelete(data,"primary");
         variables.configUntranslated=data;
         variables.config = resolveEnvVar(data);
         // remember exactly what we wrote, so loadConfig() can detect an unchanged file
@@ -878,6 +877,27 @@ component extends="QuartzSupport" javaSettings='{
         }
         return jobs;
 	}
+
+    /**
+     * the jobs currently executing on this node
+     */
+    public array function getRunningJobs() {
+        var result = [];
+        if(!isNull(variables.scheduler)) {
+            loop array=variables.scheduler.getCurrentlyExecutingJobs() item="local.ctx" {
+                var detail = ctx.getJobDetail();
+                var entry = [:];
+                entry["name"] = detail.getKey().getName();
+                entry["group"] = detail.getKey().getGroup();
+                entry["label"] = detail.getJobDataMap()["label"] ?: "";
+                entry["fireInstanceId"] = ctx.getFireInstanceId();
+                entry["fireTime"] = ctx.getFireTime();
+                entry["runTimeMs"] = ctx.getJobRunTime();
+                arrayAppend(result, entry);
+            }
+        }
+        return result;
+    }
 
     public function getTriggers() {
         var triggers = [];

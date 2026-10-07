@@ -1,0 +1,26 @@
+{
+    "mcp": "read,write",
+    "mcpAuthenticator": {
+        "component": "bearer",
+        "settings": {
+            "secret": "${QUARTZ_MCP_SECRET}"
+        }
+    },
+    "jobs": [
+        {
+            "label": "Dummy task, every 10 seconds",
+            "slug": "dummy-every-10-seconds",
+            "component": "org.lucee.extension.quartz.example.SimpleJobExample",
+            "cron": "0/10 * * * * ?",
+            "pause": false
+        },
+        {
+            "label": "Dummy task, paused, every minute (unpause it with MCP)",
+            "slug": "dummy-paused",
+            "component": "org.lucee.extension.quartz.example.SimpleJobExample",
+            "cron": "0 * * * * ?",
+            "pause": true
+        }
+    ],
+    "listeners": []
+}
