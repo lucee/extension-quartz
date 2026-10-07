@@ -53,9 +53,9 @@
             <version>1.7.7</version>
         </dependency>
         <dependency>
-            <groupId>net.joelinn</groupId>
+            <groupId>org.lucee</groupId>
             <artifactId>quartz-redis-jobstore</artifactId>
-            <version>1.2.0</version>
+            <version>1.2.0.1-RC</version>
         </dependency>
     </dependencies>
 

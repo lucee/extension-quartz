@@ -36,9 +36,9 @@ component extends="QuartzSupport" javaSettings='{
                     "version" : "1.7.7"
                 },
                 {
-                    "groupId" : "net.joelinn",
+                    "groupId" : "org.lucee",
                     "artifactId" : "quartz-redis-jobstore",
-                    "version" : "1.2.0"
+                    "version" : "1.2.0.1-RC"
                 }
             ]
         }' {

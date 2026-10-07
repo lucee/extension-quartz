@@ -97,12 +97,49 @@ abstract component {
         return readable;
     }
 
-    public function getTriggersAsQuery( boolean extended=false) {
-        var triggers=this.getTriggers();
+    /**
+     * Returns trigger, job and state of all triggers as an array of structs with the keys "trigger", "job" and "state".
+     * If the job store can read all of them in one go (RedisJobStore.getAllTriggerDetails()) that is used, because
+     * reading them through the scheduler takes several store requests per trigger, which gets slow with a remote
+     * store. Otherwise (other stores, older RedisJobStore, any failure) the data is read through the scheduler.
+     */
+    private array function getTriggerData() {
+        try {
+            var store=this.getJobStore();
+            if(!isNull(store)) {
+                // not available with an older RedisJobStore or another store: the call fails and we fall back
+                var list=store.getAllTriggerDetails();
+                var result=[];
+                loop from=0 to=list.size()-1 index="local.i" {
+                    var detail=list.get(i);
+                    var jobDetail=detail.getJobDetail();
+                    if(isNull(jobDetail)) continue; // trigger without a job
+                    arrayAppend(result, {"trigger":detail.getTrigger(), "job":jobDetail, "state":detail.getState()});
+                }
+                return result;
+            }
+        }
+        catch(any e) {
+            log log=variables.logName type="debug" text="Quartz Scheduler: bulk read of triggers not available, reading through the scheduler: #e.message#";
+        }
+
         var jobs={};
         loop array=this.getJobs() item="local.job" {
             jobs[job.getKey().getName()]=job;
         }
+        var data=[];
+        loop array=this.getTriggers() item="local.trigger" {
+            arrayAppend(data, {
+                "trigger":trigger,
+                "job":jobs[trigger.getJobKey().getName()],
+                "state":this.getScheduler().getTriggerState(trigger.getKey())
+            });
+        }
+        return data;
+    }
+
+    public function getTriggersAsQuery( boolean extended=false) {
+        var triggerData=getTriggerData();
 
         var names=["jobLabel","jobName","jobGroup","schedule","scheduleType","scheduleTranslated","slug","endpoint","state","mayFireAgain","startTime","endTime","previousFireTime","nextFireTime","finalFireTime"];
         if(extended){
@@ -113,11 +150,12 @@ abstract component {
         }
 
         var qry=queryNew(names);
-        loop array=triggers item="local.trigger" {
+        loop array=triggerData item="local.entry" {
             var row=queryAddRow(qry);
-            var job=jobs[trigger.getJobKey().getName()];
+            var trigger=entry.trigger;
+            var job=entry.job;
             var dataMap=job.getJobDataMap();
-            var state=this.getScheduler().getTriggerState(trigger.getKey());
+            var state=entry.state;
             querySetCell(qry, "jobLabel", dataMap["label"]?:"",row);
             querySetCell(qry, "jobName", job.getName(),row);
             querySetCell(qry, "jobGroup", job.getGroup(),row);
