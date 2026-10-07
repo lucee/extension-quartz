@@ -1,0 +1,20 @@
+{
+    "loggers": {
+        "scheduler": {
+            "appender": "console",
+            "appenderArguments": {
+                "streamtype": "error"
+            },
+            "layout": "classic",
+            "level": "info"
+        },
+        "application": {
+            "appender": "console",
+            "appenderArguments": {
+                "streamtype": "error"
+            },
+            "layout": "classic",
+            "level": "info"
+        }
+    }
+}

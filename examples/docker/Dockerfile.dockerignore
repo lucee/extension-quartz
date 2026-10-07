@@ -1,0 +1,4 @@
+# only what the Dockerfile copies is sent to the docker daemon
+*
+!target/*.lex
+!examples/docker

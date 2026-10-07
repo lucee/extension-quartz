@@ -11,6 +11,13 @@ component {
        "misfirePolicy": "doNothing",              // global default; per-job "misfirePolicy" overrides it.
                                                   //   cron: smart|doNothing|fireAndProceed|ignoreMisfires (default doNothing)
                                                   //   interval: smart|doNothing|fireNow|ignoreMisfires (default smart)
+       MCP interface (POST /lucee/quartz/mcp/), disabled unless "mcp" is set:
+       "mcp": "read,write",                       // read: list/get tools, write: tools that change something
+       "mcpAuthenticator": {                      // optional, default is bearer
+           "component": "bearer",                 //   alias (bearer, none) or full path of a component implementing
+                                                  //   org.lucee.extension.quartz.mcp.auth.Authenticator
+           "settings": { "secret": "${QUARTZ_MCP_SECRET}" }
+       },
     */
     "jobs": [
         /*{

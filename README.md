@@ -122,6 +122,87 @@ The `primary` setting controls which source is authoritative for job definitions
 | `"store"` (default when store is defined) | The store is the source of truth. The config file seeds initial jobs only when the store is empty. |
 | `"file"` (default when no store is defined) | The config file is always authoritative. Jobs missing from the file are removed from the store on startup. |
 
+## MCP Interface
+
+The extension includes an [MCP](https://modelcontextprotocol.io) (Model Context Protocol) server, so AI agents and other MCP clients can inspect and manage the scheduler. It is **disabled by default**, as long as `mcp` is not set in the config every request is rejected.
+
+```json
+{
+  "mcp": "read,write",
+  "mcpAuthenticator": {
+    "component": "bearer",
+    "settings": { "secret": "${QUARTZ_MCP_SECRET}" }
+  }
+}
+```
+
+The endpoint is `POST /lucee/quartz/mcp/` (JSON-RPC 2.0), no additional configuration is needed. Example client config:
+
+```json
+{ "mcpServers": { "quartz": { "url": "https://your-host/lucee/quartz/mcp/", "headers": { "Authorization": "Bearer <secret>" } } } }
+```
+
+### Permissions (`mcp`)
+
+| Value | Allows |
+|---|---|
+| not set / empty | nothing, every request is rejected |
+| `read` | the tools that only read |
+| `write` | the tools that change the scheduler |
+| `read,write` | both |
+
+Only the tools covered by the permission are listed, and only those can be called. `write` includes the ability to schedule any component or URL, grant it only to callers you trust with that.
+
+### Tools
+
+| Tool | Permission | Description |
+|---|---|---|
+| `quartz_listJobs` | read | all jobs |
+| `quartz_listTriggers` | read | triggers with schedule, state, previous/next fire time; filter `name`, `group`, `state` |
+| `quartz_getJob` | read | complete definition and trigger of a job (`name` or `slug`) |
+| `quartz_getMetadata` | read | scheduler state, version, thread pool, job store |
+| `quartz_listRunning` | read | jobs currently executing on this node |
+| `quartz_appendJob` | write | add or update a job (same format as an entry of `jobs`) |
+| `quartz_deleteJob` | write | delete a job |
+| `quartz_pauseJob` / `quartz_unpauseJob` | write | pause or unpause a job |
+| `quartz_pauseAll` / `quartz_unpauseAll` | write | pause or unpause all jobs |
+| `quartz_executeJob` | write | run a job right now |
+
+### Authentication (`mcpAuthenticator`)
+
+Authentication is pluggable. `component` is an alias or the full path of a component implementing `org.lucee.extension.quartz.mcp.auth.Authenticator`, `settings` is handed to it. When `mcpAuthenticator` is not set, `bearer` is used.
+
+| Alias | Component | Description |
+|---|---|---|
+| `bearer` | `BearerAuthenticator` | `Authorization: Bearer <secret>`. `settings.secret` gives full access, `settings.readSecret` read only access. Without `settings.secret` the environment variable `QUARTZ_MCP_SECRET` (then `MCP_SECRET_KEY`) is used. **Without a secret every request is rejected.** |
+| `none`, `anonymous` | `AnonymousAuthenticator` | lets everybody in, `settings.permissions` can limit what they may do. Only use this behind something that authenticates already. |
+
+The effective permission is what the authenticator grants **and** `mcp` allows, an authenticator can never grant more than `mcp`. A client with 10 failed authentications within a minute is blocked for the rest of the minute.
+
+To authenticate in another way (AWS IAM, JWT, ...), write a component implementing the interface:
+
+```cfml
+component implements="org.lucee.extension.quartz.mcp.auth.Authenticator" {
+
+    public any function init(required struct settings) {
+        variables.settings = arguments.settings;
+        return this;
+    }
+
+    // httpRequest: method, headers, remoteAddress, scheme, body
+    public struct function authenticate(required struct httpRequest) {
+        // ... validate the request ...
+        return { "authenticated": true, "principal": "someone", "permissions": "read" };
+    }
+}
+```
+
+and reference it in the config: `"mcpAuthenticator": { "component": "com.example.AwsAuthenticator", "settings": { ... } }`. An authenticator that throws, or returns anything invalid, rejects the request.
+
+Use HTTPS, the secret is sent with every request.
+
+A runnable example with Docker (Lucee, the extension, a dummy job and a page that uses the MCP interface) is in [examples/docker](examples/docker).
+
 ## Documentation
 
 Full documentation is available in the [Lucee docs](https://github.com/lucee/lucee-docs):
