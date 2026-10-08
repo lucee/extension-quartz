@@ -1,6 +1,6 @@
 # Quartz Scheduler Extension for Lucee
 
-A powerful scheduling extension for Lucee 6.2 and 7, built on the industry-standard [Quartz Scheduler](http://www.quartz-scheduler.org/) library. The extension is written entirely in CFML (100%), showcasing the power and flexibility of the language.
+A powerful scheduling extension for Lucee 7.0 and later, built on the industry-standard [Quartz Scheduler](http://www.quartz-scheduler.org/) library. The extension is written entirely in CFML (100%), showcasing the power and flexibility of the language.
 
 ## Overview
 
@@ -18,7 +18,7 @@ The Quartz Scheduler extension brings industry-standard scheduling capabilities 
 
 ## Requirements
 
-- Lucee 6.2 (experimental) or Lucee 7 (fully supported)
+- Lucee 7.0 or later
 
 ## Installation
 
@@ -66,11 +66,13 @@ When only `id` and `version` are provided, Lucee will download the extension dir
 
 ## Configuration
 
-The scheduler is configured via JSON, stored at:
+The scheduler is configured via JSON. The extension installs an event gateway (`quartz-task`) that reads the file set in its `configFile` setting, which defaults to:
 
 ```
-{lucee-server}/lucee-server/context/quartz/config.json
+{lucee-config}/quartz/config.json
 ```
+
+For the server context this is `<lucee-server directory>/context/quartz/config.json`, for example `/opt/lucee/server/lucee-server/context/quartz/config.json` in the official Docker image. The gateway creates the file with a default content when it first starts; to use a different location, change `configFile` in the `custom` settings of the `quartz-task` gateway.
 
 ### Basic Example
 
