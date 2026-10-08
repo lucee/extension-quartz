@@ -408,13 +408,12 @@ component extends="QuartzSupport" javaSettings='{
     }
 
     private function sync(boolean async=false) {
-        var data=[:];
+        // start from the current config, so settings we do not manage here (thread pool, mcp, ...) survive
+        var data=duplicate(variables.configUntranslated);
         data["jobs"]=exportJobs();
         data["listeners"]=variables.configUntranslated.listeners?:[];
         data["store"]=variables.configUntranslated.store?:{};
-        if(structKeyExists(variables.configUntranslated,"primary") && !isEmpty(variables.configUntranslated.primary)) {
-            data["primary"]=variables.configUntranslated.primary;
-        }
+        if(structKeyExists(data,"primary") && isEmpty(data.primary)) structDelete(data,"primary");
         variables.configUntranslated=data;
         variables.config = resolveEnvVar(data);
         // remember exactly what we wrote, so loadConfig() can detect an unchanged file

@@ -182,6 +182,22 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
                 expect( onDisk.jobs[ 1 ].component ).toBe( variables.COMP );
             } );
 
+            // pause, resume and delete rewrite the config file from the scheduler state
+            it( "keeps the settings it does not manage when pause, resume and delete rewrite the config file", function() {
+                var q    = startScheduler( { "jobs": [ compJob( pause = true ) ], "threadPoolCount": 3, "misfirePolicy": "ignoreMisfires" } );
+                var name = hash( variables.COMP, "quick" );
+
+                q.resumeJob( name, "cfm" );
+                assertSettingsKept( q );
+
+                q.pauseJob( name, "cfm" );
+                assertSettingsKept( q );
+
+                q.deleteJob( name, "cfm" );
+                assertSettingsKept( q );
+                expect( deserializeJSON( fileRead( q.getConfigFile() ) ).jobs.len() ).toBe( 0 );
+            } );
+
             it( "persists addListener() to the config file", function() {
                 var q = startScheduler( { "jobs": [], "listeners": [] } );
 
@@ -480,6 +496,12 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
     }
 
     // ---- helpers -----------------------------------------------------------
+
+    private void function assertSettingsKept( required any q ) {
+        var onDisk = deserializeJSON( fileRead( arguments.q.getConfigFile() ) );
+        expect( onDisk.threadPoolCount ).toBe( 3 );
+        expect( onDisk.misfirePolicy ).toBe( "ignoreMisfires" );
+    }
 
     private boolean function hasRedis() {
         return len( server.system.environment.REDIS_SERVER ?: "" ) > 0;
