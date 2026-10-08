@@ -144,6 +144,18 @@ jobs:
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
 
+      # Maven 3.10.0 (default on the GitHub runners since 2026-10-04) puts maven-metadata-local.xml into the staging
+      # folder of the Central bundle, which Maven Central rejects ("Bundle has content that does NOT have a .pom file").
+      # Maven 3.9.16 does not, so use that one for the deploy until the central-publishing plugin handles this.
+      - name: Use Maven 3.9.16 for the deploy
+        run: |
+          MVN_VERSION=3.9.16
+          BASE=https://repo1.maven.org/maven2/org/apache/maven/apache-maven/$MVN_VERSION
+          curl -fsSL -o "$RUNNER_TEMP/maven.tar.gz" "$BASE/apache-maven-$MVN_VERSION-bin.tar.gz"
+          echo "$(curl -fsSL "$BASE/apache-maven-$MVN_VERSION-bin.tar.gz.sha512")  $RUNNER_TEMP/maven.tar.gz" | sha512sum -c -
+          tar xzf "$RUNNER_TEMP/maven.tar.gz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/apache-maven-$MVN_VERSION/bin" >> "$GITHUB_PATH"
+
       - name: Build and Deploy with Maven
         env:
           MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
