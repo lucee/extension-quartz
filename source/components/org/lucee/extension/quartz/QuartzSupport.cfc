@@ -106,8 +106,9 @@ abstract component {
     private array function getTriggerData() {
         try {
             var store=this.getJobStore();
-            if(!isNull(store)) {
-                // not available with an older RedisJobStore or another store: the call fails and we fall back
+            // only the Redis job store has the bulk read, other job stores (in-memory, JDBC) never try it
+            if(!isNull(store) && findNoCase("RedisJobStore", store.getClass().getName())) {
+                // an older RedisJobStore without the method: the call fails and we fall back
                 var list=store.getAllTriggerDetails();
                 var result=[];
                 loop from=0 to=list.size()-1 index="local.i" {
