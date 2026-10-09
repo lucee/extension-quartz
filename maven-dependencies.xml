@@ -55,7 +55,7 @@
         <dependency>
             <groupId>org.lucee</groupId>
             <artifactId>quartz-redis-jobstore</artifactId>
-            <version>1.2.0.1-RC</version>
+            <version>2.0.0.0-RC</version>
         </dependency>
     </dependencies>
 

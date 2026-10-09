@@ -205,6 +205,19 @@ Use HTTPS, the secret is sent with every request.
 
 A runnable example with Docker (Lucee, the extension, a dummy job and a page that uses the MCP interface) is in [examples/docker](examples/docker).
 
+### Redis store: recovery after a restart
+
+With the Redis store, jobs of a node that was stopped or died while running are taken over by the other nodes. These optional keys in `store` control how fast (milliseconds, requires redis-job-store 2.0 or newer, the defaults apply if not set):
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `clusterCheckinInterval` | `240000` | a node not seen for this long is considered dead. Must be at least 3 x `heartbeatInterval` |
+| `releaseTriggersInterval` | `600000` | how often the nodes look for jobs to take over |
+| `heartbeatInterval` | `5000` | how often a node tells the cluster it is alive, `0` turns it off |
+| `testOnBorrow` | `false` | check Redis connections before use |
+
+Lower `clusterCheckinInterval` (for example `30000`) and `releaseTriggersInterval` (`15000`) only when all nodes of the cluster run the new job store, otherwise a live node running an older version may be taken for dead and its jobs started twice.
+
 ## Documentation
 
 Full documentation is available in the [Lucee docs](https://github.com/lucee/lucee-docs):

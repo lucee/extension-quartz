@@ -38,7 +38,7 @@ component extends="QuartzSupport" javaSettings='{
                 {
                     "groupId" : "org.lucee",
                     "artifactId" : "quartz-redis-jobstore",
-                    "version" : "1.2.0.1-RC"
+                    "version" : "2.0.0.0-RC"
                 }
             ]
         }' {
@@ -142,7 +142,10 @@ component extends="QuartzSupport" javaSettings='{
                         props.put("org.quartz.jobStore.keyPrefix",asString(variables.config.store.keyPrefix ?: "QRTZ_"));
                         props.put("org.quartz.jobStore.host", asString(variables.config.store.host ?: "localhost"));
                         props.put("org.quartz.jobStore.misfireThreshold", asString(variables.config.store.misfireThreshold ?: "60000"));
-                        //props.put("org.quartz.jobStore.releaseTriggersInterval", asString(variables.config.store.releaseTriggersInterval ?: "600000"));
+                        // recovery of the triggers of stopped or dead nodes, the defaults of the job store apply if not set
+                        loop array=["clusterCheckinInterval","releaseTriggersInterval","heartbeatInterval","testOnBorrow"] item="local.redisSetting" {
+                            if(!isNull(variables.config.store[redisSetting])) props.put("org.quartz.jobStore." & redisSetting, asString(variables.config.store[redisSetting]));
+                        }
                         props.put("org.quartz.jobStore.port", asString(variables.config.store.port ?: "6379"));
                         if(!isNull(variables.config.store.password)) props.put("org.quartz.jobStore.password", asString(variables.config.store.password) );
                         props.put("org.quartz.jobStore.redisCluster",asString((variables.config.store.redisCluster?:false)==true));

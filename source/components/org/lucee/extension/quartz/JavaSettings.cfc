@@ -41,7 +41,7 @@ interface susi=2  javaSettings='{
                 {
                     "groupId" : "org.lucee",
                     "artifactId" : "quartz-redis-jobstore",
-                    "version" : "1.2.0.1-RC"
+                    "version" : "2.0.0.0-RC"
                 }
             ]
         }' {
