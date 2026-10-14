@@ -1,5 +1,4 @@
 component extends="QuartzSupport" javaSettings='{
-            "loadPaths": ["./java"],
             "maven":[
                {
                     "groupId" : "org.quartz-scheduler",
@@ -161,10 +160,6 @@ component extends="QuartzSupport" javaSettings='{
                         hasStore=true;
                         log log=variables.logName type="info" text="Quartz Scheduler: configured with Redis Storage";
                     }
-                }
-                // in-memory store keeps Quartz's misfireThreshold (60000) unless the config sets one
-                if(isNull(variables.config.store.type) && structKeyExists(variables.config, "misfireThreshold")) {
-                    props.put("org.quartz.jobStore.misfireThreshold", asString(variables.config.misfireThreshold));
                 }
                 variables.factory = new StdSchedulerFactory(props);
                 variables.scheduler = variables.factory.getScheduler();
@@ -816,9 +811,7 @@ component extends="QuartzSupport" javaSettings='{
      * For a one-shot whose start time is already past, that instruction's next fire time is null,
      * so if the Redis job store releases the trigger back to WAITING (it does not record the fire
      * of a stateful job, through 2.0.0.0-RC) the trigger is completed instead of fired again.
-     * ManualTriggerListener unschedules it when the run finishes, fails, or is vetoed.
-     * A second one-shot that never runs (blocked, then finalized COMPLETE past misfireThreshold)
-     * is removed by ManualTriggerSchedulerListener. Quartz still decides that it does not run.
+     * ManualTriggerListener also unschedules it when the run finishes, fails, or is vetoed.
      */
     public function triggerJob(name,string group) {
         var strName="";
@@ -857,30 +850,13 @@ component extends="QuartzSupport" javaSettings='{
         log log=variables.logName type="debug" text="Quartz Scheduler: performing action [triggerJob] on job [#strName#]";
     }
 
-    // always installed; the job listener is hidden from getListeners() so a file-primary reload does not drop it
+    // always installed; hidden from getListeners() so a file-primary reload does not drop it
     private void function ensureManualTriggerListener() {
         if(isNull(variables.scheduler)) return;
         var manager=variables.scheduler.getListenerManager();
         var name=ManualTriggerListener::listenerName();
-        if(isNull(manager.getJobListener(name))) {
-            manager.addJobListener(JavaCast("org.quartz.JobListener", new ManualTriggerListener()));
-        }
-        var schedulerName="lucee-quartz-manual-trigger-scheduler";
-        var already=false;
-        loop array=manager.getSchedulerListeners() item="local.listener" {
-            try {
-                if(listener.getName()==schedulerName) {
-                    already=true;
-                    break;
-                }
-            }
-            catch(any ignore) {}
-        }
-        if(!already) {
-            // Java listener, loaded from ./java next to this component (same classloader as Quartz)
-            var schedulerListener=createObject("java", "org.lucee.extension.quartz.ManualTriggerSchedulerListener").init(variables.scheduler);
-            manager.addSchedulerListener(schedulerListener);
-        }
+        if(!isNull(manager.getJobListener(name))) return;
+        manager.addJobListener(JavaCast("org.quartz.JobListener", new ManualTriggerListener()));
     }
 
     private function actionOnJob(string action,name,string group) {
