@@ -1,8 +1,9 @@
 name: Java CI Combined
 
 # Push publishes the -SNAPSHOT (or -ALPHA / final) version already in pom.xml.
-# A manual run with "release" (the default) drops -SNAPSHOT, deploys that version to
-# Maven Central, then commits the next -SNAPSHOT. Untick it to deploy the snapshot instead.
+# A manual run picks a type: release (default) publishes X.Y.Z.N, rc X.Y.Z.N-RC, beta X.Y.Z.N-BETA,
+# alpha X.Y.Z.N-ALPHA (N from the -SNAPSHOT in pom.xml). It deploys that version to Maven Central
+# and S3, then commits the next -SNAPSHOT. Type "snapshot" only deploys the current snapshot.
 # A push to a branch with a -SNAPSHOT version also commits the next -SNAPSHOT after the deploy,
 # so every commit gets its own build number. The bump commit itself does not bump again.
 on:
@@ -10,10 +11,16 @@ on:
   pull_request:
   workflow_dispatch:
     inputs:
-      release:
-        description: 'Release: drop -SNAPSHOT, deploy to Maven Central, then bump to the next -SNAPSHOT'
-        type: boolean
-        default: true
+      type:
+        description: 'What to publish: release (X.Y.Z.N), rc (-RC), beta (-BETA), alpha (-ALPHA), or snapshot (deploy the current -SNAPSHOT, no bump)'
+        type: choice
+        options:
+          - release
+          - rc
+          - beta
+          - alpha
+          - snapshot
+        default: release
 
 jobs:
   setup:
@@ -44,13 +51,21 @@ jobs:
         id: extract-version
         env:
           # A manual run releases unless the box is unticked. Push and pull_request never do.
-          RELEASE_REQUESTED: ${{ github.event_name == 'workflow_dispatch' && inputs.release && 'true' || 'false' }}
+          RELEASE_TYPE: ${{ github.event_name == 'workflow_dispatch' && inputs.type || 'snapshot' }}
         run: |
           set -euo pipefail
           VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout | tr -d '\r')
           RELEASE=false
           NEXT_VERSION=""
-          if [[ "$RELEASE_REQUESTED" == "true" ]]; then
+          case "$RELEASE_TYPE" in
+            release) SUFFIX="" ;;
+            rc) SUFFIX="-RC" ;;
+            beta) SUFFIX="-BETA" ;;
+            alpha) SUFFIX="-ALPHA" ;;
+            snapshot) SUFFIX="none" ;;
+            *) echo "::error::unknown release type [${RELEASE_TYPE}]"; exit 1 ;;
+          esac
+          if [[ "$SUFFIX" != "none" ]]; then
             if [[ "$VERSION" != *-SNAPSHOT ]]; then
               echo "::error::A release run needs a -SNAPSHOT version in pom.xml (found ${VERSION})"
               exit 1
@@ -63,7 +78,11 @@ jobs:
             PREFIX="${RELEASE_VERSION%.*}"
             LAST="${RELEASE_VERSION##*.}"
             NEXT_VERSION="${PREFIX}.$((10#$LAST + 1))-SNAPSHOT"
-            VERSION="$RELEASE_VERSION"
+            VERSION="${RELEASE_VERSION}${SUFFIX}"
+            if ! [[ "$VERSION" =~ ^[0-9]+(\.[0-9]+){3}(-RC|-BETA|-ALPHA)?$ ]]; then
+              echo "::error::[${VERSION}] is not a valid release version"
+              exit 1
+            fi
             RELEASE=true
             echo "Release run: publish ${VERSION}, then bump pom.xml to ${NEXT_VERSION}"
           fi
@@ -237,7 +256,10 @@ jobs:
           MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
-          if [[ "${{ needs.setup.outputs.version }}" == *-SNAPSHOT ]]; then
+          if [[ "${{ needs.setup.outputs.release }}" == "true" ]]; then
+            echo "------- Maven Deploy ${{ needs.setup.outputs.version }} on ${{ github.event_name }} -------";
+            mvn -B -e -f pom.xml clean deploy -DperformRelease=true --settings maven-settings.xml
+          elif [[ "${{ needs.setup.outputs.version }}" == *-SNAPSHOT ]]; then
             echo "------- Maven Deploy snapshot on ${{ github.event_name }} -------";
             mvn -B -e -f pom.xml clean deploy --settings maven-settings.xml
           elif [[ "${{ needs.setup.outputs.version }}" == *-ALPHA ]]; then
@@ -250,7 +272,7 @@ jobs:
 
       # everything the S3 upload needs (LDEV-6568): full and lite .lex plus the flattened POM
       - name: Upload artifact for S3
-        if: success() && !endsWith(needs.setup.outputs.version, '-ALPHA')
+        if: success() && (needs.setup.outputs.release == 'true' || !endsWith(needs.setup.outputs.version, '-ALPHA'))
         uses: actions/upload-artifact@v4
         with:
           name: quartz-s3
@@ -261,12 +283,13 @@ jobs:
 
   # upload the published build to the Maven folders, LDEV-6568.
   # Cut-off rules (SNAPSHOTs stop on 2027-03-01) live in the called workflow.
-  # ALPHA builds are only installed, not published, so they are skipped like on Central.
+  # ALPHA versions from pom.xml on a push are only installed, so they are skipped like on Central.
+  # An alpha release run publishes to Central and S3.
   # secrets: inherit passes the org secrets S3_ACCESS_ID_DOWNLOAD and S3_SECRET_KEY_DOWNLOAD.
   # The called workflow warns and skips when those secrets are not available to this repo.
   s3:
     needs: [setup, deploy]
-    if: always() && needs.deploy.result == 'success' && !endsWith(needs.setup.outputs.version, '-ALPHA') && github.event_name != 'pull_request'
+    if: always() && needs.deploy.result == 'success' && (needs.setup.outputs.release == 'true' || !endsWith(needs.setup.outputs.version, '-ALPHA')) && github.event_name != 'pull_request'
     uses: lucee/lucee/.github/workflows/extension-s3-upload.yml@7.1
     with:
       artifact-name: quartz-s3
