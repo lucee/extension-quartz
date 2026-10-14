@@ -604,6 +604,21 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
                 expect( q.exportJobs().len() ).toBe( 1 );
             } );
 
+            it( "drops a second manual trigger while a stateful job is still running", function() {
+                assertSecondManualTriggerDropped( startScheduler( { "jobs": [ blockingJob() ] } ) );
+            } );
+
+            it( title="drops a second manual trigger while a stateful job is still running (Redis store)", skip=!hasRedis(), body=function() {
+                // a short misfire threshold so the blocked one-shot is completed without waiting a minute
+                var q = startRedisScheduler( [ blockingJob() ], { "misfireThreshold": 100 } );
+                try {
+                    assertSecondManualTriggerDropped( q );
+                }
+                finally {
+                    try { q.getJobStore().clearAllSchedulingData(); } catch ( any e ) {}
+                }
+            } );
+
             // releaseTriggersInterval is shorter than the wait, so an orphaned one-shot would be
             // handed back and (inside the misfire threshold) fired again. It must stay gone.
             it( title="a failing stateful manual run is not released again (Redis store)", skip=!hasRedis(), body=function() {
@@ -736,6 +751,55 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
             if ( org.lucee.extension.quartz.QuartzUtil::isManualTrigger( t ) ) n++;
         }
         return n;
+    }
+
+    // a stateful job that stays in execute() long enough for a second triggerJob() to misfire
+    private struct function blockingJob() {
+        return {
+            "label": "block",
+            "component": "org.lucee.extension.quartz.example.BlockingJob",
+            "cron": "0 0 0 1 1 ? 2099",
+            "pause": true,
+            "stateful": true,
+            "millis": 800
+        };
+    }
+
+    // the second MT_* is completed by the misfire instruction and must not stay listed as pending.
+    // the first run is the only one that executes.
+    private void function assertSecondManualTriggerDropped( required any q ) {
+        var comp = "org.lucee.extension.quartz.example.BlockingJob";
+        var job = createObject( "component", comp );
+        job.reset();
+        // RAMJobStore reads this field directly. The Redis store takes it from the config before start.
+        try { arguments.q.getJobStore().setMisfireThreshold( javaCast( "long", 100 ) ); } catch ( any e ) {}
+
+        var name = hash( comp, "quick" );
+        arguments.q.triggerJob( name, "cfm" );
+        var started = false;
+        loop times=40 {
+            if ( job.hasStarted() ) { started = true; break; }
+            sleep( 25 );
+        }
+        expect( started ).toBeTrue( "the stateful job did not start" );
+        arguments.q.triggerJob( name, "cfm" );
+
+        expect( waitUntilNoManualTrigger( arguments.q, 8000 ) ).toBeTrue();
+        expect( countManualTriggers( arguments.q ) ).toBe( 0 );
+        var qry = arguments.q.getTriggersAsQuery( false );
+        expect( qry.recordCount ).toBe( 1 );
+        expect( qry.scheduleType ).toBe( "cron" );
+        // give a second run time to start if the misfire did not drop it
+        sleep( 300 );
+        expect( job.runCount() ).toBe( 1 );
+
+        // reload must not bring the completed one-shot back
+        var onDisk = deserializeJSON( fileRead( arguments.q.getConfigFile() ) );
+        onDisk.touched = "second-manual";
+        rewrite( arguments.q, onDisk );
+        expect( arguments.q.loadConfig() ).toBe( "running" );
+        expect( countManualTriggers( arguments.q ) ).toBe( 0 );
+        expect( arguments.q.getTriggersAsQuery( false ).recordCount ).toBe( 1 );
     }
 
     // the one-shot fires on a scheduler thread; poll until the listener has removed it

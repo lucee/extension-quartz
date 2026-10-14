@@ -144,6 +144,8 @@ component {
     }
 
     public static function getTriggersAsQuery(Quartz quartz, boolean extended=false) {
+        // same fallback as QuartzSupport: a COMPLETED manual trigger is not a pending run
+        arguments.quartz.removeCompletedManualTriggers();
         var triggers=quartz.getTriggers();
         var jobs={};
         loop array=quartz.getJobs() item="local.job" {

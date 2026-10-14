@@ -160,8 +160,11 @@ component extends="QuartzSupport" javaSettings='{
                 }
                 variables.factory = new StdSchedulerFactory(props);
                 variables.scheduler = variables.factory.getScheduler();
-                // before start(), so a manual run cannot finish without this listener in place
-                variables.scheduler.getListenerManager().addJobListener(JavaCast("org.quartz.JobListener", new ManualRunListener()));
+                // before start(), so a manual run cannot finish without this listener in place.
+                // the scheduler listener removes an MT_* trigger that misfire completes without a run
+                var manualRun=new ManualRunListener(variables.scheduler, variables.logName);
+                variables.scheduler.getListenerManager().addJobListener(JavaCast("org.quartz.JobListener", manualRun));
+                variables.scheduler.getListenerManager().addSchedulerListener(JavaCast("org.quartz.SchedulerListener", manualRun));
 
                 // load listeners
                 if(!isNull(config.listeners)) {
@@ -288,6 +291,9 @@ component extends="QuartzSupport" javaSettings='{
      * in that case the scheduler instance is restarted (the gateway stays up).
      */
     public function loadConfig() {
+        // a second manual trigger can be left COMPLETED by a misfire. Drop it even when the
+        // file itself did not change, so a reload does not keep listing it as pending.
+        removeCompletedManualTriggers();
         // if the file on disk is byte-for-byte what we last loaded/persisted, there is
         // nothing to reconcile - return early without touching jobs, listeners or the file
         var raw = fileRead(variables.configFile);
@@ -444,6 +450,32 @@ component extends="QuartzSupport" javaSettings='{
         manager.addJobListener(JavaCast("org.quartz.JobListener",cfc));
         log log=variables.logName type="debug" text="Quartz Scheduler: loaded job listener [#listenerData.component#]";
         return true;
+    }
+
+    /**
+     * A manual trigger left COMPLETED never ran (misfire of a second triggerJob() while a
+     * stateful job was running). Listing and reload drop it instead of showing a pending run.
+     */
+    public void function removeCompletedManualTriggers() {
+        var sched=variables.scheduler;
+        if(isNull(sched)) return;
+        try {
+            loop array=getTriggers() item="local.trigger" {
+                if(!QuartzUtil::isManualTrigger(trigger)) continue;
+                var state=sched.getTriggerState(trigger.getKey());
+                if(isNull(state) || state.name()!="COMPLETE") continue;
+                try {
+                    sched.unscheduleJob(trigger.getKey());
+                    log log=variables.logName type="warn" text="Quartz Scheduler: removed completed manual trigger [#trigger.getKey()#]. It was finalized without running.";
+                }
+                catch(any e) {
+                    log log=variables.logName type="error" text="Quartz Scheduler: could not remove completed manual trigger [#trigger.getKey()#]: #e.message#";
+                }
+            }
+        }
+        catch(any e) {
+            log log=variables.logName type="debug" text="Quartz Scheduler: could not scan for completed manual triggers: #e.message#";
+        }
     }
 
     private struct function getExistingJobs() {
