@@ -142,8 +142,6 @@ abstract component {
     }
 
     public function getTriggersAsQuery( boolean extended=false) {
-        // drop COMPLETED manual triggers before the query is built, so they are not "pending"
-        this.removeCompletedManualTriggers();
         var triggerData=getTriggerData();
 
         var names=["jobLabel","jobName","jobGroup","schedule","scheduleType","scheduleTranslated","slug","endpoint","state","mayFireAgain","startTime","endTime","previousFireTime","nextFireTime","finalFireTime"];

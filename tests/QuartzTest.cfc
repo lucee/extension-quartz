@@ -605,14 +605,15 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
             } );
 
             it( "drops a second manual trigger while a stateful job is still running", function() {
-                assertSecondManualTriggerDropped( startScheduler( { "jobs": [ blockingJob() ] } ) );
+                var job = blockingJob();
+                assertSecondManualTriggerDropped( startScheduler( { "jobs": [ job ] } ), job.markerFile );
             } );
 
             it( title="drops a second manual trigger while a stateful job is still running (Redis store)", skip=!hasRedis(), body=function() {
-                // a short misfire threshold so the blocked one-shot is completed without waiting a minute
-                var q = startRedisScheduler( [ blockingJob() ], { "misfireThreshold": 100 } );
+                var job = blockingJob();
+                var q = startRedisScheduler( [ job ] );
                 try {
-                    assertSecondManualTriggerDropped( q );
+                    assertSecondManualTriggerDropped( q, job.markerFile );
                 }
                 finally {
                     try { q.getJobStore().clearAllSchedulingData(); } catch ( any e ) {}
@@ -761,27 +762,32 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
             "cron": "0 0 0 1 1 ? 2099",
             "pause": true,
             "stateful": true,
-            "millis": 800
+            "millis": 1500,
+            "markerFile": getTempDirectory() & "quartz-block-" & createUniqueId() & ".txt"
         };
+    }
+
+    private numeric function markerCount( required string path ) {
+        if ( !fileExists( arguments.path ) ) return 0;
+        return val( trim( fileRead( arguments.path ) ) );
     }
 
     // the second MT_* is completed by the misfire instruction and must not stay listed as pending.
     // the first run is the only one that executes.
-    private void function assertSecondManualTriggerDropped( required any q ) {
-        var comp = "org.lucee.extension.quartz.example.BlockingJob";
-        var job = createObject( "component", comp );
-        job.reset();
-        // RAMJobStore reads this field directly. The Redis store takes it from the config before start.
-        try { arguments.q.getJobStore().setMisfireThreshold( javaCast( "long", 100 ) ); } catch ( any e ) {}
+    private void function assertSecondManualTriggerDropped( required any q, required string markerFile ) {
+        var name = hash( "org.lucee.extension.quartz.example.BlockingJob", "quick" );
+        if ( fileExists( arguments.markerFile ) ) fileDelete( arguments.markerFile );
 
-        var name = hash( comp, "quick" );
         arguments.q.triggerJob( name, "cfm" );
         var started = false;
-        loop times=40 {
-            if ( job.hasStarted() ) { started = true; break; }
+        loop times=80 {
+            if ( markerCount( arguments.markerFile ) > 0 ) { started = true; break; }
             sleep( 25 );
         }
         expect( started ).toBeTrue( "the stateful job did not start" );
+        // the default threshold is 60s, so a one-shot blocked for this run would still fire.
+        // lower it only after the first run has started, or that run is completed without executing.
+        tightenMisfireThreshold( arguments.q, 100 );
         arguments.q.triggerJob( name, "cfm" );
 
         expect( waitUntilNoManualTrigger( arguments.q, 8000 ) ).toBeTrue();
@@ -791,7 +797,7 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
         expect( qry.scheduleType ).toBe( "cron" );
         // give a second run time to start if the misfire did not drop it
         sleep( 300 );
-        expect( job.runCount() ).toBe( 1 );
+        expect( markerCount( arguments.markerFile ) ).toBe( 1 );
 
         // reload must not bring the completed one-shot back
         var onDisk = deserializeJSON( fileRead( arguments.q.getConfigFile() ) );
@@ -800,6 +806,21 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
         expect( arguments.q.loadConfig() ).toBe( "running" );
         expect( countManualTriggers( arguments.q ) ).toBe( 0 );
         expect( arguments.q.getTriggersAsQuery( false ).recordCount ).toBe( 1 );
+    }
+
+    // RAMJobStore.setMisfireThreshold(long) is the field acquireNextTriggers reads.
+    // RedisJobStore.setMisfireThreshold(int) does not update the storage created in initialize().
+    private void function tightenMisfireThreshold( required any q, required numeric ms ) {
+        var store = arguments.q.getJobStore();
+        try { store.setMisfireThreshold( javaCast( "long", arguments.ms ) ); } catch ( any e ) {}
+        try { store.setMisfireThreshold( javaCast( "int", arguments.ms ) ); } catch ( any e ) {}
+        try {
+            var field = store.getClass().getDeclaredField( "storage" );
+            field.setAccessible( true );
+            var storage = field.get( store );
+            if ( !isNull( storage ) ) storage.setMisfireThreshold( javaCast( "int", arguments.ms ) );
+        }
+        catch ( any e ) {}
     }
 
     // the one-shot fires on a scheduler thread; poll until the listener has removed it
