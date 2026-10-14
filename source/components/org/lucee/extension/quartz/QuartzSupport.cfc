@@ -99,9 +99,12 @@ abstract component {
 
     /**
      * Returns trigger, job and state of all triggers as an array of structs with the keys "trigger", "job" and "state".
+     * Includes triggerJob() one-shots (MT_* in DEFAULT) so a pending manual run can be listed. Callers that persist
+     * the configured schedule (exportJobs) or resolve the job's schedule trigger (getExistingJobs) must skip those.
      * If the job store can read all of them in one go (RedisJobStore.getAllTriggerDetails()) that is used, because
      * reading them through the scheduler takes several store requests per trigger, which gets slow with a remote
      * store. Otherwise (other stores, older RedisJobStore, any failure) the data is read through the scheduler.
+     * Both paths return the raw trigger; schedule columns are derived from its type afterwards.
      */
     private array function getTriggerData() {
         try {
@@ -170,18 +173,11 @@ abstract component {
             querySetCell(qry, "previousFireTime", trigger.getPreviousFireTime(),row);
             querySetCell(qry, "nextFireTime", trigger.getNextFireTime(),row);
             querySetCell(qry, "finalFireTime", trigger.getFinalFireTime(),row);
-            // cron
-            if(dataMap["schedule"]=="cron") {
-                querySetCell(qry, "schedule", dataMap["cron"]?:"",row);
-                querySetCell(qry, "scheduleType", "cron",row);
-                querySetCell(qry, "scheduleTranslated", trigger.getExpressionSummary(),row);
-            }
-            else {
-                querySetCell(qry, "schedule", dataMap["interval"]?:"",row);
-                querySetCell(qry, "scheduleType", "interval",row);
-                var s=int(trigger.getRepeatInterval()/1000);
-                querySetCell(qry, "scheduleTranslated", "every " &(s==1?" second":s&" seconds"),row);
-            }
+            // schedule columns follow the trigger type (CronTrigger vs SimpleTrigger), not the job data map
+            var scheduleInfo=QuartzUtil::describeTriggerSchedule(trigger, dataMap);
+            querySetCell(qry, "schedule", scheduleInfo.schedule,row);
+            querySetCell(qry, "scheduleType", scheduleInfo.scheduleType,row);
+            querySetCell(qry, "scheduleTranslated", scheduleInfo.scheduleTranslated,row);
             if(extended){
                 querySetCell(qry, "key", trigger.getKey(),row);
                 querySetCell(qry, "jobDataMap", job.getJobDataMap(),row);
@@ -201,6 +197,8 @@ abstract component {
         
         var arr=[];
         loop array=triggers item="local.trigger" {
+            // a pending manual run is not part of the configured schedule; writing it would duplicate the job
+            if(QuartzUtil::isManualTrigger(trigger)) continue;
             var sct=[:];
             arrayAppend(arr, sct);
             var job=jobs[trigger.getJobKey().getName()];
@@ -288,6 +286,8 @@ abstract component {
         var data=[:];
         loop query=triggers {
             if(name==triggers.jobName && group==triggers.jobGroup) {
+                // the configured schedule, not a pending manual run that shares the job
+                if((triggers.scheduleType?:"")=="manual") continue;
                 loop array=queryColumnArray(triggers) item="local.col" {
                     data[col]=triggers[col];
                 }
