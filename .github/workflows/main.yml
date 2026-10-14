@@ -78,12 +78,6 @@ jobs:
           path: ~/work/_actions/lucee/script-runner/main/lucee-download-cache
           key: lucee-downloads
 
-      - name: Import GPG key
-        run: |
-          echo "$GPG_PRIVATE_KEY" | base64 --decode | gpg --batch --import
-        env:
-          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
-
   build-and-test:
     runs-on: ubuntu-latest
     needs: setup
@@ -180,7 +174,8 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     needs: [setup, build-and-test]
-    if: always() && needs.build-and-test.result == 'success'
+    # pull requests (often from forks) get no secrets, so they only build and test
+    if: always() && needs.build-and-test.result == 'success' && github.event_name != 'pull_request'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
