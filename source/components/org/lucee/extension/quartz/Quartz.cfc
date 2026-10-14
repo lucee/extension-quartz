@@ -1,4 +1,5 @@
 component extends="QuartzSupport" javaSettings='{
+            "loadPaths": ["./java"],
             "maven":[
                {
                     "groupId" : "org.quartz-scheduler",
@@ -231,8 +232,6 @@ component extends="QuartzSupport" javaSettings='{
                     }
                 }
                 variables.scheduler.start();
-                // a COMPLETE one-shot left in a persistent store is not a pending run
-                removeCompletedManualTriggers();
                 variables.state="running";
                 sync(true);
             }
@@ -352,7 +351,6 @@ component extends="QuartzSupport" javaSettings='{
                 }
             }
             ensureManualTriggerListener();
-            removeCompletedManualTriggers();
 
             // load jobs
             var isPrimaryFile = (variables.config.primary ?: (hasStore ? "store" : "file")) == "file";
@@ -820,7 +818,7 @@ component extends="QuartzSupport" javaSettings='{
      * of a stateful job, through 2.0.0.0-RC) the trigger is completed instead of fired again.
      * ManualTriggerListener unschedules it when the run finishes, fails, or is vetoed.
      * A second one-shot that never runs (blocked, then finalized COMPLETE past misfireThreshold)
-     * is removed by ManualTriggerSchedulerListener, and again on listing or reload if it is still COMPLETE.
+     * is removed by ManualTriggerSchedulerListener. Quartz still decides that it does not run.
      */
     public function triggerJob(name,string group) {
         var strName="";
@@ -867,7 +865,7 @@ component extends="QuartzSupport" javaSettings='{
         if(isNull(manager.getJobListener(name))) {
             manager.addJobListener(JavaCast("org.quartz.JobListener", new ManualTriggerListener()));
         }
-        var schedulerName=ManualTriggerSchedulerListener::listenerName();
+        var schedulerName="lucee-quartz-manual-trigger-scheduler";
         var already=false;
         loop array=manager.getSchedulerListeners() item="local.listener" {
             try {
@@ -879,20 +877,9 @@ component extends="QuartzSupport" javaSettings='{
             catch(any ignore) {}
         }
         if(!already) {
-            var schedulerListener=new ManualTriggerSchedulerListener(variables.scheduler, variables.logName);
-            manager.addSchedulerListener(JavaCast("org.quartz.SchedulerListener", schedulerListener));
-        }
-    }
-
-    // fallback for a COMPLETE MT_* the scheduler listener did not remove (still in Redis or JDBC)
-    private void function removeCompletedManualTriggers() {
-        if(isNull(variables.scheduler)) return;
-        loop array=getTriggers() item="local.trigger" {
-            try {
-                var state=variables.scheduler.getTriggerState(trigger.getKey());
-                QuartzUtil::discardCompletedManualTrigger(variables.scheduler, trigger, state);
-            }
-            catch(any e) {}
+            // Java listener, loaded from ./java next to this component (same classloader as Quartz)
+            var schedulerListener=createObject("java", "org.lucee.extension.quartz.ManualTriggerSchedulerListener").init(variables.scheduler);
+            manager.addSchedulerListener(schedulerListener);
         }
     }
 

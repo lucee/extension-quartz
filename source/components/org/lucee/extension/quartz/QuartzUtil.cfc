@@ -108,28 +108,6 @@ component {
     }
 
     /**
-     * A manual one-shot Quartz has already finalized (state COMPLETE) will not run.
-     * JobListener never saw it. Drop it so listing does not show "pending manual run"
-     * and the row does not stay in a persistent store. Returns true when the caller should skip it.
-     */
-    public static boolean function discardCompletedManualTrigger(required scheduler, required trigger, required state) {
-        if(isNull(arguments.scheduler) || !isManualTrigger(arguments.trigger)) return false;
-        var stateName="";
-        try {
-            stateName=arguments.state.name();
-        }
-        catch(any e) {
-            stateName=arguments.state & "";
-        }
-        if(stateName!="COMPLETE") return false;
-        try {
-            arguments.scheduler.unscheduleJob(arguments.trigger.getKey());
-        }
-        catch(any e) {}
-        return true;
-    }
-
-    /**
      * True when the trigger is a CronTrigger (CronTriggerImpl). Schedule columns follow the trigger
      * type, not the job data map: the map describes the job, and a manual one-shot shares it.
      */
@@ -183,14 +161,11 @@ component {
         }
 
         var qry=queryNew(names);
-        var sched=quartz.getScheduler();
         loop array=triggers item="local.trigger" {
-            var state=sched.getTriggerState(trigger.getKey());
-            // a one-shot finalized without running is not a pending manual run
-            if(discardCompletedManualTrigger(sched, trigger, state)) continue;
             var row=queryAddRow(qry);
             var job=jobs[trigger.getJobKey().getName()];
             var dataMap=job.getJobDataMap();
+            var state=quartz.getScheduler().getTriggerState(trigger.getKey());
             querySetCell(qry, "jobLabel", dataMap["label"]?:"",row);
             querySetCell(qry, "jobName", job.getName(),row);
             querySetCell(qry, "jobGroup", job.getGroup(),row);
