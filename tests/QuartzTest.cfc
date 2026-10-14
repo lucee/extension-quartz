@@ -493,6 +493,82 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
                 }
             } );
         } );
+
+        // triggerJob() stores a one-shot SimpleTrigger (MT_* in DEFAULT) next to the configured
+        // trigger. Listing must keep working and show that pending run; export/sync must not write
+        // the job twice; a reload must keep matching the configured trigger. (LDEV-6576)
+        describe( "manual triggerJob while a one-shot is pending (LDEV-6576)", function() {
+
+            beforeEach( function() { variables.instances = []; } );
+            afterEach( function() { stopAll(); } );
+
+            it( "lists a pending manual run of a cron job and does not write it into the config", function() {
+                var q    = startScheduler( { "jobs": [ cronJob() ], "threadPoolCount": 3, "misfirePolicy": "ignoreMisfires" } );
+                var name = hash( variables.COMP, "quick" );
+                pauseDefaultTriggerGroup( q );
+                q.triggerJob( name, "cfm" );
+
+                assertPendingManualRun( q, "cron", "0 0 0 1 1 ? 2099" );
+                // the cron row still came from getExpressionSummary(), not from the one-shot
+                expect( scheduleRow( q.getTriggersAsQuery( false ), "cron" ).scheduleTranslated ).toInclude( "2099" );
+                // getTriggerForJob must return the configured trigger, even if the one-shot is listed first
+                expect( q.getTriggerForJob( name, "cfm" ).scheduleType ).toBe( "cron" );
+                expect( org.lucee.extension.quartz.QuartzUtil::getTriggerForJob( q, name, "cfm" ).scheduleType ).toBe( "cron" );
+
+                // pause rewrites the config from exportJobs(); the one-shot must not become a second job
+                q.pauseJob( name, "cfm" );
+                var onDisk = deserializeJSON( fileRead( q.getConfigFile() ) );
+                expect( onDisk.jobs.len() ).toBe( 1 );
+                expect( onDisk.jobs[ 1 ].cron ).toBe( "0 0 0 1 1 ? 2099" );
+                expect( onDisk.threadPoolCount ).toBe( 3 );
+                expect( onDisk.misfirePolicy ).toBe( "ignoreMisfires" );
+
+                // a reload reconciles through getExistingJobs(); mapping the one-shot as the job's
+                // trigger would delete and reschedule, and the pending manual run would disappear
+                onDisk.touched = "ldev-6576";
+                rewrite( q, onDisk );
+                expect( q.loadConfig() ).toBe( "running" );
+                assertPendingManualRun( q, "cron", "0 0 0 1 1 ? 2099" );
+                onDisk = deserializeJSON( fileRead( q.getConfigFile() ) );
+                expect( onDisk.jobs.len() ).toBe( 1 );
+                expect( onDisk.touched ).toBe( "ldev-6576" );
+            } );
+
+            it( "lists a pending manual run of an interval job and does not write it into the config", function() {
+                var q    = startScheduler( { "jobs": [ intervalJob() ] } );
+                var name = hash( variables.COMP, "quick" );
+                pauseDefaultTriggerGroup( q );
+                q.triggerJob( name, "cfm" );
+
+                assertPendingManualRun( q, "interval", "3600" );
+                expect( scheduleRow( q.getTriggersAsQuery( false ), "interval" ).scheduleTranslated ).toBe( "every 3600 seconds" );
+
+                q.pauseJob( name, "cfm" );
+                var onDisk = deserializeJSON( fileRead( q.getConfigFile() ) );
+                expect( onDisk.jobs.len() ).toBe( 1 );
+                expect( val( onDisk.jobs[ 1 ].interval ) ).toBe( 3600 );
+            } );
+
+            it( title="lists a pending manual run and does not duplicate the job (Redis store)", skip=!hasRedis(), body=function() {
+                var q    = startRedisScheduler( [ cronJob() ] );
+                var name = hash( variables.COMP, "quick" );
+                try {
+                    expect( q.getJobStore().getClass().getName() ).toInclude( "RedisJobStore" );
+                    pauseDefaultTriggerGroup( q );
+                    q.triggerJob( name, "cfm" );
+
+                    // the bulk read (getAllTriggerDetails) is what getTriggersAsQuery uses for Redis
+                    expect( q.getJobStore().getAllTriggerDetails().size() ).toBe( 2 );
+                    assertPendingManualRun( q, "cron", "0 0 0 1 1 ? 2099" );
+
+                    q.pauseJob( name, "cfm" );
+                    expect( deserializeJSON( fileRead( q.getConfigFile() ) ).jobs.len() ).toBe( 1 );
+                }
+                finally {
+                    try { q.getJobStore().clearAllSchedulingData(); } catch ( any e ) {}
+                }
+            } );
+        } );
     }
 
     // ---- helpers -----------------------------------------------------------
@@ -501,6 +577,60 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
         var onDisk = deserializeJSON( fileRead( arguments.q.getConfigFile() ) );
         expect( onDisk.threadPoolCount ).toBe( 3 );
         expect( onDisk.misfirePolicy ).toBe( "ignoreMisfires" );
+    }
+
+    // the one-shot from triggerJob() is created in the DEFAULT group; pausing that group
+    // stores it paused so the scheduler does not fire it before the assertions run.
+    // configured triggers live in group "cfm" and are left alone.
+    private void function pauseDefaultTriggerGroup( required any q ) {
+        // Quartz is in the extension bundle, so the matcher class is loaded from a live trigger
+        var loader       = arguments.q.getTriggers()[ 1 ].getClass().getClassLoader();
+        var matcherClass = loader.loadClass( "org.quartz.impl.matchers.GroupMatcher" );
+        var stringClass  = loader.loadClass( "java.lang.String" );
+        var method       = matcherClass.getMethod( "groupEquals", javaCast( "java.lang.Class[]", [ stringClass ] ) );
+        var matcher      = method.invoke( nullValue(), javaCast( "java.lang.Object[]", [ "DEFAULT" ] ) );
+        arguments.q.getJobStore().pauseTriggers( matcher );
+    }
+
+    // one row of getTriggersAsQuery() for a schedule type
+    private struct function scheduleRow( required query qry, required string scheduleType ) {
+        loop query=arguments.qry {
+            if ( qry.scheduleType == arguments.scheduleType ) {
+                return {
+                    "schedule": qry.schedule,
+                    "scheduleTranslated": qry.scheduleTranslated,
+                    "scheduleType": qry.scheduleType
+                };
+            }
+        }
+        throw "no row with scheduleType " & arguments.scheduleType;
+    }
+
+    // listing shows the configured schedule and the pending manual run, once each;
+    // export (Quartz and QuartzUtil) keeps a single job
+    private void function assertPendingManualRun( required any q, required string scheduleType, required string schedule ) {
+        var qry = arguments.q.getTriggersAsQuery( true );
+        expect( qry.recordCount ).toBe( 2 );
+
+        var seen = {};
+        loop query=qry {
+            expect( structKeyExists( seen, qry.scheduleType ) ).toBeFalse( "schedule listed twice: " & qry.scheduleType );
+            seen[ qry.scheduleType ] = qry.schedule & "";
+            if ( qry.scheduleType == "manual" ) {
+                expect( left( qry[ "key" ].getName(), 3 ) ).toBe( "MT_" );
+                expect( qry[ "key" ].getGroup() ).toBe( "DEFAULT" );
+                expect( qry.scheduleTranslated ).toBe( "pending manual run" );
+                expect( qry.schedule ).toBe( "" );
+            }
+        }
+        expect( seen ).toHaveKey( "manual" );
+        expect( seen ).toHaveKey( arguments.scheduleType );
+        expect( seen[ arguments.scheduleType ] ).toBe( arguments.schedule );
+
+        expect( arguments.q.exportJobs().len() ).toBe( 1 );
+        var util = org.lucee.extension.quartz.QuartzUtil::getTriggersAsQuery( arguments.q, false );
+        expect( util.recordCount ).toBe( 2 );
+        expect( org.lucee.extension.quartz.QuartzUtil::exportJobs( arguments.q ).len() ).toBe( 1 );
     }
 
     private boolean function hasRedis() {

@@ -94,6 +94,55 @@ component {
         return readable;
     }
 
+    /**
+     * True for the one-shot SimpleTrigger Quartz creates in triggerJob(): name MT_* in the DEFAULT
+     * group, repeat count 0 and no interval. A configured interval trigger is also a SimpleTrigger,
+     * but it repeats and lives in the cfm group, so it is not matched here.
+     */
+    public static boolean function isManualTrigger(required trigger) {
+        var key=arguments.trigger.getKey();
+        if(!isNull(key) && key.getGroup()=="DEFAULT" && left(key.getName(), 3)=="MT_") return true;
+        if(isSimpleTrigger(arguments.trigger)) {
+            // one fire, no repeat interval: not a configured schedule
+            if(arguments.trigger.getRepeatCount()==0 && arguments.trigger.getRepeatInterval()==0) return true;
+        }
+        return false;
+    }
+
+    // CronTriggerImpl / SimpleTriggerImpl; the class name avoids loading the interface through another classloader
+    public static boolean function isCronTrigger(required trigger) {
+        return find("CronTrigger", arguments.trigger.getClass().getName()) > 0;
+    }
+
+    public static boolean function isSimpleTrigger(required trigger) {
+        return find("SimpleTrigger", arguments.trigger.getClass().getName()) > 0;
+    }
+
+    /**
+     * Schedule columns for one trigger. The trigger type decides the columns: a CronTrigger never
+     * falls through to getRepeatInterval(), and a SimpleTrigger never has getExpressionSummary()
+     * called on it. The job data map's schedule string is not used, because a manual run shares
+     * the job (and that string) with the configured trigger.
+     */
+    public static struct function describeSchedule(required trigger, dataMap) {
+        if(isManualTrigger(arguments.trigger)) {
+            return { "schedule":"", "scheduleType":"manual", "scheduleTranslated":"pending manual run" };
+        }
+        if(isCronTrigger(arguments.trigger)) {
+            var cron=arguments.trigger.getCronExpression();
+            if(!len(cron ?: "") && !isNull(arguments.dataMap)) cron=arguments.dataMap["cron"] ?: "";
+            return { "schedule":cron ?: "", "scheduleType":"cron", "scheduleTranslated":arguments.trigger.getExpressionSummary() };
+        }
+        var seconds=0;
+        if(isSimpleTrigger(arguments.trigger)) seconds=int(arguments.trigger.getRepeatInterval()/1000);
+        else if(!isNull(arguments.dataMap) && isNumeric(arguments.dataMap["interval"] ?: "")) seconds=int(arguments.dataMap["interval"]);
+        return {
+            "schedule":seconds,
+            "scheduleType":"interval",
+            "scheduleTranslated":"every " & (seconds==1?" second":seconds & " seconds")
+        };
+    }
+
     public static function getTriggersAsQuery(Quartz quartz, boolean extended=false) {
         var triggers=quartz.getTriggers();
         var jobs={};
@@ -127,18 +176,10 @@ component {
             querySetCell(qry, "previousFireTime", trigger.getPreviousFireTime(),row);
             querySetCell(qry, "nextFireTime", trigger.getNextFireTime(),row);
             querySetCell(qry, "finalFireTime", trigger.getFinalFireTime(),row);
-            // cron
-            if(dataMap["schedule"]=="cron") {
-                querySetCell(qry, "schedule", dataMap["cron"]?:"",row);
-                querySetCell(qry, "scheduleType", "cron",row);
-                querySetCell(qry, "scheduleTranslated", trigger.getExpressionSummary(),row);
-            }
-            else {
-                querySetCell(qry, "schedule", dataMap["interval"]?:"",row);
-                querySetCell(qry, "scheduleType", "interval",row);
-                var s=int(trigger.getRepeatInterval()/1000);
-                querySetCell(qry, "scheduleTranslated", "every " &(s==1?" second":s&" seconds"),row);
-            }
+            var schedule=describeSchedule(trigger, dataMap);
+            querySetCell(qry, "schedule", schedule.schedule,row);
+            querySetCell(qry, "scheduleType", schedule.scheduleType,row);
+            querySetCell(qry, "scheduleTranslated", schedule.scheduleTranslated,row);
             if(extended){
                 querySetCell(qry, "key", trigger.getKey(),row);
                 querySetCell(qry, "jobDataMap", job.getJobDataMap(),row);
@@ -158,6 +199,8 @@ component {
 
         var arr=[];
         loop array=triggers item="local.trigger" {
+            // triggerJob() leaves a one-shot beside the configured trigger; writing it would duplicate the job
+            if(isManualTrigger(trigger)) continue;
             var sct=[:];
             arrayAppend(arr, sct);
             var job=jobs[trigger.getJobKey().getName()];
@@ -236,14 +279,23 @@ component {
         var triggers=getTriggersAsQuery( quartz, extended); 
         var jobs=getJobsAsQuery( quartz, extended);
         var data=[:];
+        var manual=[:];
         loop query=triggers {
             if(name==triggers.jobName && group==triggers.jobGroup) {
+                var row=[:];
                 loop array=queryColumnArray(triggers) item="local.col" {
-                    data[col]=triggers[col];
+                    row[col]=triggers[col];
                 }
+                // a pending manual run shares the job; callers want the configured schedule
+                if((triggers.scheduleType?:"")=="manual") {
+                    if(!structCount(manual)) manual=row;
+                    continue;
+                }
+                data=row;
                 break;
             }
         }
+        if(!structCount(data)) data=manual;
         loop query=jobs {
             if(name==jobs.name && group==jobs.group) {
                 loop array=queryColumnArray(jobs) item="local.col" {

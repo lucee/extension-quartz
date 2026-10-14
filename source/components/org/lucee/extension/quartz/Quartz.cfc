@@ -448,7 +448,9 @@ component extends="QuartzSupport" javaSettings='{
         var existingJobs=[:];
         var existingTriggers=[:];
         loop array=getTriggers() item="local.trigger" {
-            // dump(trigger.getJobKey().getName());
+            // triggerJob() adds a one-shot (MT_* in DEFAULT) next to the configured trigger.
+            // Mapping the job to that one-shot makes the next reload treat the schedule as changed.
+            if(QuartzUtil::isManualTrigger(trigger)) continue;
             existingJobs[trigger.getJobKey().getName()]={
                 "job":trigger.getJobKey(),
                 "trigger":trigger.getKey()
@@ -771,6 +773,16 @@ component extends="QuartzSupport" javaSettings='{
         sync();
 	} 
 
+    /**
+     * Run the job once, now. Quartz stores a one-shot SimpleTrigger (MT_* in group DEFAULT) beside
+     * the configured trigger until it fires. That one-shot is not part of the schedule: listing
+     * reports it as a pending manual run, and export/sync and getExistingJobs ignore it.
+     *
+     * On the Redis job store a failed stateful job can leave this one-shot in place and fire it
+     * again. That happens in quartz-redis-jobstore (RedisStorage.triggersFired does not drop a
+     * stateful trigger whose next fire time is null, and the later orphan recovery releases it
+     * back to waiting). It is not something this extension can correct.
+     */
     public function triggerJob(name,string group) {
         actionOnJob("triggerJob",name,group?:nullValue());
     }

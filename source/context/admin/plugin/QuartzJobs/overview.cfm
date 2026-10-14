@@ -178,6 +178,8 @@ function insertTemplate(type) {
 					<td rowspan="2">
 						<cfif jobs.scheduleType EQ "interval">
 							#displayTimeRange(jobs.schedule)#
+						<cfelseif jobs.scheduleType EQ "manual">
+							pending manual run
 						<cfelse>
 							#jobs.schedule#
 						</cfif>
