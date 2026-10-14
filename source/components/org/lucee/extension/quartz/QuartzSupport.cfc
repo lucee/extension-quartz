@@ -107,6 +107,7 @@ abstract component {
      * Both paths return the raw trigger; schedule columns are derived from its type afterwards.
      */
     private array function getTriggerData() {
+        var sched=this.getScheduler();
         try {
             var store=this.getJobStore();
             // only the Redis job store has the bulk read, other job stores (in-memory, JDBC) never try it
@@ -118,6 +119,8 @@ abstract component {
                     var detail=list.get(i);
                     var jobDetail=detail.getJobDetail();
                     if(isNull(jobDetail)) continue; // trigger without a job
+                    // COMPLETE manual one-shots never ran; drop them instead of listing "pending manual run"
+                    if(QuartzUtil::discardCompletedManualTrigger(sched, detail.getTrigger(), detail.getState())) continue;
                     arrayAppend(result, {"trigger":detail.getTrigger(), "job":jobDetail, "state":detail.getState()});
                 }
                 return result;
@@ -133,10 +136,12 @@ abstract component {
         }
         var data=[];
         loop array=this.getTriggers() item="local.trigger" {
+            var state=sched.getTriggerState(trigger.getKey());
+            if(QuartzUtil::discardCompletedManualTrigger(sched, trigger, state)) continue;
             arrayAppend(data, {
                 "trigger":trigger,
                 "job":jobs[trigger.getJobKey().getName()],
-                "state":this.getScheduler().getTriggerState(trigger.getKey())
+                "state":state
             });
         }
         return data;
