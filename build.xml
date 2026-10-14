@@ -74,6 +74,17 @@ event-gateway-instance: "[{'cfcPath':'${cfc-path}','id':'${task-instance-name}',
                 <include name="**/*.cfc"/>
             </fileset>
         </copy>
+        <!-- Java SchedulerListener, on the component classloader via javaSettings loadPaths "./java" -->
+        <mkdir dir="${temp}/components/org/lucee/extension/quartz/java"/>
+        <javac srcdir="${src}/java" destdir="${temp}/components/org/lucee/extension/quartz/java"
+               source="11" target="11" includeantruntime="false" debug="true">
+            <classpath>
+                <fileset dir="${maven.dir}">
+                    <include name="**/quartz-2.3.2.jar"/>
+                    <include name="**/slf4j-api-1.7.7.jar"/>
+                </fileset>
+            </classpath>
+        </javac>
 
        <!-- copy the tags necessary -->
         <copy todir="${temp}/tags">

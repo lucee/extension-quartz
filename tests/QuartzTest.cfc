@@ -546,6 +546,24 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
                     try { q.getJobStore().clearAllSchedulingData(); } catch ( any e ) {}
                 }
             } );
+
+            // the second one-shot stays BLOCKED, then misfires to COMPLETE without a job run
+            it( "drops a second manual trigger finalized while a stateful job is running", function() {
+                assertSecondManualTriggerDropped( startScheduler( {
+                    "jobs": [ countingJob( sleep = 2500 ) ],
+                    "misfireThreshold": 500
+                } ) );
+            } );
+
+            it( title="drops a second manual trigger finalized while a stateful job is running (Redis store)", skip=!hasRedis(), body=function() {
+                var q = startRedisScheduler( [ countingJob( sleep = 2500 ) ], "file", { "misfireThreshold": 500 } );
+                try {
+                    assertSecondManualTriggerDropped( q );
+                }
+                finally {
+                    try { q.getJobStore().clearAllSchedulingData(); } catch ( any e ) {}
+                }
+            } );
         } );
     }
 
@@ -679,8 +697,8 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
         expect( countManualTriggers( arguments.q ) ).toBe( 0 );
     }
 
-    private struct function countingJob( boolean fail = false ) {
-        return {
+    private struct function countingJob( boolean fail = false, numeric sleep = 0 ) {
+        var job = {
             "label": "count",
             "slug": "manual-count",
             "component": "org.lucee.extension.quartz.example.CountingJob",
@@ -690,6 +708,42 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
             "runFile": getTempDirectory() & "quartz-manual-" & createUniqueId() & ".txt",
             "fail": arguments.fail
         };
+        if ( arguments.sleep > 0 ) job[ "sleep" ] = arguments.sleep;
+        return job;
+    }
+
+    // triggerJob twice while the stateful run is in progress: the second one-shot must not stay listed
+    private void function assertSecondManualTriggerDropped( required any q ) {
+        var name    = hash( "manual-count", "quick" );
+        var runFile = arguments.q.getJobs()[ 1 ].getJobDataMap()[ "runFile" ];
+        arguments.q.triggerJob( name, "cfm" );
+        loop from=1 to=50 index="local.i" {
+            if ( fileExists( runFile ) && val( fileRead( runFile ) ) >= 1 ) break;
+            sleep( 50 );
+        }
+        expect( val( fileRead( runFile ) ) ).toBe( 1 );
+        arguments.q.triggerJob( name, "cfm" );
+        loop from=1 to=100 index="local.i" {
+            if ( countManualTriggers( arguments.q ) == 0 ) break;
+            sleep( 100 );
+        }
+        expect( countManualTriggers( arguments.q ) ).toBe( 0 );
+        // a late second execution would increment after the first sleep ends
+        sleep( 400 );
+        expect( val( fileRead( runFile ) ) ).toBe( 1 );
+        expect( countManualTriggers( arguments.q ) ).toBe( 0 );
+        expect( arguments.q.getTriggers().len() ).toBe( 1 );
+        var qry = arguments.q.getTriggersAsQuery( false );
+        expect( qry.recordCount ).toBe( 1 );
+        expect( qry.scheduleType ).toBe( "cron" );
+        expect( arguments.q.exportJobs().len() ).toBe( 1 );
+
+        var onDisk = deserializeJSON( fileRead( arguments.q.getConfigFile() ) );
+        onDisk[ "logName" ] = "scheduler-reload";
+        fileWrite( arguments.q.getConfigFile(), serializeJSON( onDisk ) );
+        arguments.q.loadConfig();
+        expect( countManualTriggers( arguments.q ) ).toBe( 0 );
+        expect( arguments.q.getTriggersAsQuery( false ).recordCount ).toBe( 1 );
     }
 
     private void function assertManualListing( required any qry, required string jobName, required string scheduleType, required string schedule ) {
