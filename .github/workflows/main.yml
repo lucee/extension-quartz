@@ -1,12 +1,27 @@
 name: Java CI Combined
 
-on: [push, pull_request, workflow_dispatch]
+# Push publishes the -SNAPSHOT (or -ALPHA / final) version already in pom.xml.
+# A manual run with "release" (the default) drops -SNAPSHOT, deploys that version to
+# Maven Central, then commits the next -SNAPSHOT. Untick it to deploy the snapshot instead.
+# A push to a branch with a -SNAPSHOT version also commits the next -SNAPSHOT after the deploy,
+# so every commit gets its own build number. The bump commit itself does not bump again.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: 'Release: drop -SNAPSHOT, deploy to Maven Central, then bump to the next -SNAPSHOT'
+        type: boolean
+        default: true
 
 jobs:
   setup:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.extract-version.outputs.VERSION }}
+      release: ${{ steps.extract-version.outputs.RELEASE }}
+      next_version: ${{ steps.extract-version.outputs.NEXT_VERSION }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -27,9 +42,35 @@ jobs:
 
       - name: Extract version number
         id: extract-version
+        env:
+          # A manual run releases unless the box is unticked. Push and pull_request never do.
+          RELEASE_REQUESTED: ${{ github.event_name == 'workflow_dispatch' && inputs.release && 'true' || 'false' }}
         run: |
-          VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
-          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          set -euo pipefail
+          VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout | tr -d '\r')
+          RELEASE=false
+          NEXT_VERSION=""
+          if [[ "$RELEASE_REQUESTED" == "true" ]]; then
+            if [[ "$VERSION" != *-SNAPSHOT ]]; then
+              echo "::error::A release run needs a -SNAPSHOT version in pom.xml (found ${VERSION})"
+              exit 1
+            fi
+            RELEASE_VERSION="${VERSION%-SNAPSHOT}"
+            if ! [[ "$RELEASE_VERSION" =~ ^[0-9]+(\.[0-9]+){3}$ ]]; then
+              echo "::error::[${RELEASE_VERSION}] is not a 4-part release version"
+              exit 1
+            fi
+            PREFIX="${RELEASE_VERSION%.*}"
+            LAST="${RELEASE_VERSION##*.}"
+            NEXT_VERSION="${PREFIX}.$((10#$LAST + 1))-SNAPSHOT"
+            VERSION="$RELEASE_VERSION"
+            RELEASE=true
+            echo "Release run: publish ${VERSION}, then bump pom.xml to ${NEXT_VERSION}"
+          fi
+          echo "Using VERSION=${VERSION} RELEASE=${RELEASE} NEXT_VERSION=${NEXT_VERSION}"
+          echo "VERSION=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "RELEASE=${RELEASE}" >> "$GITHUB_OUTPUT"
+          echo "NEXT_VERSION=${NEXT_VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Cache Lucee files
         uses: actions/cache@v4
@@ -78,6 +119,26 @@ jobs:
         with:
           java-version: '21'
           distribution: 'temurin'
+
+      # A release run builds the version with -SNAPSHOT removed, the same one deploy publishes.
+      - name: Set the version for this run
+        if: needs.setup.outputs.release == 'true'
+        env:
+          VERSION: ${{ needs.setup.outputs.version }}
+        run: |
+          set -euo pipefail
+          python3 - "$VERSION" <<'PY'
+          import pathlib, re, sys
+          new = sys.argv[1]
+          path = pathlib.Path("pom.xml")
+          text = path.read_text()
+          pattern = r"(<artifactId>quartz-extension</artifactId>\s*<version>)[^<]+(</version>)"
+          text2, n = re.subn(pattern, lambda m: m.group(1) + new + m.group(2), text, count=1)
+          if n != 1:
+              raise SystemExit(f"project version was not updated (matches={n})")
+          path.write_text(text2)
+          print(f"pom.xml version is now {new}")
+          PY
 
       - name: Build and Install with Maven
         run: |
@@ -156,6 +217,25 @@ jobs:
           tar xzf "$RUNNER_TEMP/maven.tar.gz" -C "$RUNNER_TEMP"
           echo "$RUNNER_TEMP/apache-maven-$MVN_VERSION/bin" >> "$GITHUB_PATH"
 
+      - name: Set the version for this run
+        if: needs.setup.outputs.release == 'true'
+        env:
+          VERSION: ${{ needs.setup.outputs.version }}
+        run: |
+          set -euo pipefail
+          python3 - "$VERSION" <<'PY'
+          import pathlib, re, sys
+          new = sys.argv[1]
+          path = pathlib.Path("pom.xml")
+          text = path.read_text()
+          pattern = r"(<artifactId>quartz-extension</artifactId>\s*<version>)[^<]+(</version>)"
+          text2, n = re.subn(pattern, lambda m: m.group(1) + new + m.group(2), text, count=1)
+          if n != 1:
+              raise SystemExit(f"project version was not updated (matches={n})")
+          path.write_text(text2)
+          print(f"pom.xml version is now {new}")
+          PY
+
       - name: Build and Deploy with Maven
         env:
           MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
@@ -172,3 +252,103 @@ jobs:
             echo "------- Maven Deploy release on ${{ github.event_name }} -------";
             mvn -B -e -f pom.xml clean deploy -DperformRelease=true --settings maven-settings.xml
           fi
+
+      # everything the S3 upload needs (LDEV-6568): full and lite .lex plus the flattened POM
+      - name: Upload artifact for S3
+        if: success() && !endsWith(needs.setup.outputs.version, '-ALPHA')
+        uses: actions/upload-artifact@v4
+        with:
+          name: quartz-s3
+          include-hidden-files: true
+          path: |
+            target/*.lex
+            .flattened-pom.xml
+
+  # upload the published build to the Maven folders, LDEV-6568.
+  # Cut-off rules (SNAPSHOTs stop on 2027-03-01) live in the called workflow.
+  # ALPHA builds are only installed, not published, so they are skipped like on Central.
+  # secrets: inherit passes the org secrets S3_ACCESS_ID_DOWNLOAD and S3_SECRET_KEY_DOWNLOAD.
+  # The called workflow warns and skips when those secrets are not available to this repo.
+  s3:
+    needs: [setup, deploy]
+    if: always() && needs.deploy.result == 'success' && !endsWith(needs.setup.outputs.version, '-ALPHA') && github.event_name != 'pull_request'
+    uses: lucee/lucee/.github/workflows/extension-s3-upload.yml@7.1
+    with:
+      artifact-name: quartz-s3
+      version: ${{ needs.setup.outputs.version }}
+    secrets: inherit
+
+  # After a release deploy, or a SNAPSHOT deploy on a push, commit the next -SNAPSHOT.
+  # No loop: the push uses the workflow token, which does not start another workflow run,
+  # and runs started by github-actions[bot] or with the bump message are skipped anyway.
+  bump:
+    runs-on: ubuntu-latest
+    needs: [setup, deploy, s3]
+    if: >-
+      always() && needs.deploy.result == 'success'
+      && (needs.s3.result == 'success' || needs.s3.result == 'skipped')
+      && (needs.setup.outputs.release == 'true'
+        || (github.event_name == 'push'
+          && startsWith(github.ref, 'refs/heads/')
+          && endsWith(needs.setup.outputs.version, '-SNAPSHOT')
+          && github.actor != 'github-actions[bot]'
+          && !startsWith(github.event.head_commit.message, 'Set version to ')
+          && !contains(github.event.head_commit.message, '[skip ci]')))
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Bump to the next SNAPSHOT
+        env:
+          NEXT_VERSION: ${{ needs.setup.outputs.next_version }}
+          DEPLOYED_VERSION: ${{ needs.setup.outputs.version }}
+          IS_RELEASE: ${{ needs.setup.outputs.release }}
+        run: |
+          set -euo pipefail
+          if [[ "$IS_RELEASE" != "true" ]]; then
+            # push: bump from the version on the branch tip, only if nobody bumped it since this deploy
+            CURRENT=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout | tr -d '\r')
+            if [[ "$CURRENT" != "$DEPLOYED_VERSION" ]]; then
+              echo "Branch is at ${CURRENT}, deployed ${DEPLOYED_VERSION}; already bumped, nothing to do"
+              exit 0
+            fi
+            BASE="${CURRENT%-SNAPSHOT}"
+            if ! [[ "$BASE" =~ ^[0-9]+(\.[0-9]+){3}$ ]]; then
+              echo "::warning::[${CURRENT}] is not a 4-part SNAPSHOT version, not bumping"
+              exit 0
+            fi
+            NEXT_VERSION="${BASE%.*}.$((10#${BASE##*.} + 1))-SNAPSHOT"
+            echo "Push run: bump pom.xml from ${CURRENT} to ${NEXT_VERSION}"
+          fi
+          if [[ -z "$NEXT_VERSION" ]]; then
+            echo "::error::next version was not resolved"
+            exit 1
+          fi
+          python3 - "$NEXT_VERSION" <<'PY'
+          import pathlib, re, sys
+          new = sys.argv[1]
+          path = pathlib.Path("pom.xml")
+          text = path.read_text()
+          pattern = r"(<artifactId>quartz-extension</artifactId>\s*<version>)[^<]+(</version>)"
+          text2, n = re.subn(pattern, lambda m: m.group(1) + new + m.group(2), text, count=1)
+          if n != 1:
+              raise SystemExit(f"project version was not updated (matches={n})")
+          path.write_text(text2)
+          print(f"pom.xml version is now {new}")
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pom.xml
+          if git diff --cached --quiet; then
+            echo "pom.xml already at ${NEXT_VERSION}"
+            exit 0
+          fi
+          git commit -m "Set version to ${NEXT_VERSION}"
+          git fetch origin "${GITHUB_REF_NAME}"
+          git rebase "origin/${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
