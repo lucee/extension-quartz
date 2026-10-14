@@ -142,7 +142,10 @@ component extends="QuartzSupport" javaSettings='{
                         props.put("org.quartz.jobStore.keyPrefix",asString(variables.config.store.keyPrefix ?: "QRTZ_"));
                         props.put("org.quartz.jobStore.host", asString(variables.config.store.host ?: "localhost"));
                         props.put("org.quartz.jobStore.misfireThreshold", asString(variables.config.store.misfireThreshold ?: "60000"));
-                        // recovery of the triggers of stopped or dead nodes, the defaults of the job store apply if not set
+                        // recovery of the triggers of stopped or dead nodes. Omitted keys keep the job store
+                        // defaults (releaseTriggersInterval is 600000). That interval is the cluster takeover
+                        // window; a manual one-shot is stopped from re-firing by its misfire policy and by
+                        // ManualTriggerListener, not by releasing orphans sooner.
                         loop array=["clusterCheckinInterval","releaseTriggersInterval","heartbeatInterval","testOnBorrow"] item="local.redisSetting" {
                             if(!isNull(variables.config.store[redisSetting])) props.put("org.quartz.jobStore." & redisSetting, asString(variables.config.store[redisSetting]));
                         }
@@ -183,6 +186,7 @@ component extends="QuartzSupport" javaSettings='{
                         }
                     }
                 }
+                ensureManualTriggerListener();
 
                 // load jobs
                 var isPrimaryFile = (config.primary ?: (hasStore ? "store" : "file")) == "file";
@@ -341,6 +345,7 @@ component extends="QuartzSupport" javaSettings='{
                     }
                 }
             }
+            ensureManualTriggerListener();
 
             // load jobs
             var isPrimaryFile = (variables.config.primary ?: (hasStore ? "store" : "file")) == "file";
@@ -449,6 +454,9 @@ component extends="QuartzSupport" javaSettings='{
         var existingTriggers=[:];
         loop array=getTriggers() item="local.trigger" {
             // dump(trigger.getJobKey().getName());
+            // triggerJob() parks a one-shot next to the real trigger. Mapping that one-shot as the
+            // job's trigger makes the next reload delete and reschedule the job.
+            if(QuartzUtil::isManualTrigger(trigger)) continue;
             existingJobs[trigger.getJobKey().getName()]={
                 "job":trigger.getJobKey(),
                 "trigger":trigger.getKey()
@@ -518,18 +526,42 @@ component extends="QuartzSupport" javaSettings='{
                 if(!isNull(existingTriggerKey)) variables.scheduler.unscheduleJob(existingTriggerKey);
                 variables.scheduler.deleteJob(jobKey);
             }
-            // different trigger/job? -> delete so it gets rescheduled below
-            else if(existingTriggerKey.name!=trigger.name || !isJobDataMapEqual(jobDetail.getJobDataMap(),job.getJobDataMap())) {
-                deleteJob(jobKey);
-            }
             else {
-                // change state of existing jobs
-                changeState(data.pause?:false, existingJobs[job.name].job,trigger.key);
-                //dump("------ update "&job.name&" ------");
+                // Update the job and its configured trigger in place. deleteJob() would also
+                // remove a pending MT_* one-shot, and the schedule below would not put it back.
+                var dataChanged=!isJobDataMapEqual(jobDetail.getJobDataMap(),job.getJobDataMap());
+                var triggerChanged=existingTriggerKey.getName()!=trigger.getKey().getName()
+                    || existingTriggerKey.getGroup()!=trigger.getKey().getGroup();
+                // 3-arg addJob stores a non-durable job. The 2-arg form rejects it
+                // ("Jobs added with no trigger must be durable") and the reload would stop
+                // before the pause/resume below.
+                if(dataChanged) variables.scheduler.addJob(job, true, true);
+                if(triggerChanged) {
+                    // createTrigger() does not set a job key; scheduleJob(trigger) requires one
+                    trigger.setJobKey(job.getKey());
+                    variables.scheduler.unscheduleJob(existingTriggerKey);
+                    variables.scheduler.scheduleJob(trigger);
+                }
+                changeState(data.pause?:false, job.getKey(), trigger.getKey());
+                if(dataChanged || triggerChanged)
+                    log log=variables.logName type="debug" text="Quartz Scheduler: updated job [#data.label#] with schedule [#data.cron?:("every "&data.interval&" second(s)")#]";
                 return;
             }
         }
-                
+        // getExistingJobs() skips manual triggers, so a job whose only trigger is a pending
+        // one-shot is not in that map. Attach the configured trigger without deleting the one-shot.
+        else if(!isNull(variables.scheduler.getJobDetail(job.getKey()))) {
+            trigger.setJobKey(job.getKey());
+            variables.scheduler.addJob(job, true, true);
+            variables.scheduler.scheduleJob(trigger);
+            if(data.pause?:false) {
+                scheduler.pauseTrigger(trigger.getKey());
+                scheduler.pauseJob(job.getKey());
+            }
+            log log=variables.logName type="debug" text="Quartz Scheduler: loaded job [#data.label#] with schedule [#data.cron?:("every "&data.interval&" second(s)")#]";
+            return;
+        }
+
         variables.scheduler.scheduleJob(job, trigger);
         // dump("------ add "&job.name&" ------");
         // change state of new jobs
@@ -771,8 +803,60 @@ component extends="QuartzSupport" javaSettings='{
         sync();
 	} 
 
+    /**
+     * Run a job once, alongside its configured schedule.
+     * The one-shot is an MT_* SimpleTrigger in the DEFAULT group (the same identity Quartz's
+     * Scheduler.triggerJob() uses) so listing, export and reload can tell it from the real trigger.
+     * Its misfire instruction is RESCHEDULE_NEXT_WITH_EXISTING_COUNT, not the smart policy.
+     * For a one-shot whose start time is already past, that instruction's next fire time is null,
+     * so if the Redis job store releases the trigger back to WAITING (it does not record the fire
+     * of a stateful job, through 2.0.0.0-RC) the trigger is completed instead of fired again.
+     * ManualTriggerListener also unschedules it when the run finishes, fails, or is vetoed.
+     */
     public function triggerJob(name,string group) {
-        actionOnJob("triggerJob",name,group?:nullValue());
+        var strName="";
+        if(isSimpleValue(name)) {
+            local.jk=new JobKey(name, group?:nullValue());
+            strName=name;
+        }
+        else {
+            local.jk=name;
+            try{strName=local.jk.getName();}catch(ex) {}
+        }
+        var sched=variables.scheduler;
+        if(isNull(sched)) throw "there is no scheduler initalized";
+        if(isNull(sched.getJobDetail(local.jk))) throw "there is no job [#strName#]";
+
+        var attempts=0;
+        while(true) {
+            attempts++;
+            var schedule=SimpleScheduleBuilder::simpleSchedule()
+                .withRepeatCount(0)
+                .withMisfireHandlingInstructionNextWithExistingCount();
+            var trigger=TriggerBuilder::newTrigger()
+                .withIdentity("MT_" & createUniqueId(), "DEFAULT")
+                .forJob(local.jk)
+                .startNow()
+                .withSchedule(schedule)
+                .build();
+            try {
+                sched.scheduleJob(trigger);
+                break;
+            }
+            catch(any e) {
+                if(attempts>=5 || !findNoCase("ObjectAlreadyExists", e.type & " " & e.message)) rethrow;
+            }
+        }
+        log log=variables.logName type="debug" text="Quartz Scheduler: performing action [triggerJob] on job [#strName#]";
+    }
+
+    // always installed; hidden from getListeners() so a file-primary reload does not drop it
+    private void function ensureManualTriggerListener() {
+        if(isNull(variables.scheduler)) return;
+        var manager=variables.scheduler.getListenerManager();
+        var name=ManualTriggerListener::listenerName();
+        if(!isNull(manager.getJobListener(name))) return;
+        manager.addJobListener(JavaCast("org.quartz.JobListener", new ManualTriggerListener()));
     }
 
     private function actionOnJob(string action,name,string group) {
@@ -857,10 +941,9 @@ component extends="QuartzSupport" javaSettings='{
         if(!isNull(variables.scheduler)) {
             var manager=variables.scheduler.getListenerManager();
             loop array=manager.getJobListeners() item="local.listener" {
-                if(!isNull(listener)) {
-                    if(asStruct)  listeners[listener.name]=listener;
-                    else arrayAppend(listeners, listener);
-                }
+                if(isNull(listener) || listener.getName()==ManualTriggerListener::listenerName()) continue;
+                if(asStruct)  listeners[listener.name]=listener;
+                else arrayAppend(listeners, listener);
             }
         }
         return listeners;

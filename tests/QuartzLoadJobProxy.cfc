@@ -15,4 +15,23 @@ component extends="org.lucee.extension.quartz.Quartz" {
         variables.logName   = "scheduler";
         return loadJob( arguments.data, arguments.existingJobs );
     }
+
+    /**
+     * Forces getTriggers() so a test can choose the order getExistingJobs() sees.
+     * A null argument falls through to the real scheduler.
+     */
+    public function setTriggersForTest( array triggers ) {
+        if ( isNull( arguments.triggers ) ) structDelete( variables, "triggersForTest" );
+        else variables.triggersForTest = arguments.triggers;
+    }
+
+    public function getTriggers() {
+        if ( !isNull( variables.triggersForTest ) ) return variables.triggersForTest;
+        return super.getTriggers();
+    }
+
+    public struct function callGetExistingJobs() {
+        variables.logName = "scheduler";
+        return getExistingJobs();
+    }
 }

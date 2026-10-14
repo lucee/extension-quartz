@@ -493,6 +493,60 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
                 }
             } );
         } );
+
+        describe( "manual triggerJob() one-shot (LDEV-6576)", function() {
+
+            beforeEach( function() { variables.instances = []; } );
+            afterEach( function() { stopAll(); } );
+
+            // in-memory store: listing goes through the scheduler, and pause/sync rewrites the config file
+            it( "lists a pending manual run of a cron job and does not persist it", function() {
+                var q = startScheduler( { "jobs": [ compJob() ] } );
+                assertManualRunIgnored( q, "cron", "0 0 0 1 1 ? 2099" );
+            } );
+
+            it( "lists a pending manual run of an interval job and does not persist it", function() {
+                var q = startScheduler( { "jobs": [ intervalJob() ] } );
+                assertManualRunIgnored( q, "interval", "3600" );
+            } );
+
+            // Redis store: listing uses RedisJobStore.getAllTriggerDetails(); export still walks the triggers
+            it( title="lists a pending manual run and does not persist it (Redis store, bulk read)", skip=!hasRedis(), body=function() {
+                var q = startRedisScheduler( [ compJob() ], "file" );
+                try {
+                    expect( q.getJobStore().getClass().getName() ).toInclude( "RedisJobStore" );
+                    assertManualRunIgnored( q, "cron", "0 0 0 1 1 ? 2099" );
+                }
+                finally {
+                    try { q.getJobStore().clearAllSchedulingData(); } catch ( any e ) {}
+                }
+            } );
+
+            // stateful, so this is the Redis path that used to leave the one-shot acquired and re-fire it
+            it( "fires a stateful manual run once when the job succeeds", function() {
+                assertManualFiresOnce( startScheduler( { "jobs": [ countingJob() ] } ) );
+            } );
+
+            it( "fires a stateful manual run once when the job fails", function() {
+                assertManualFiresOnce( startScheduler( { "jobs": [ countingJob( fail = true ) ] } ) );
+            } );
+
+            // releaseTriggersInterval is shorter than the wait, so an orphaned one-shot would be
+            // handed back and, with the smart policy, fired again. It must stay gone.
+            it( title="a failing stateful manual run is not released again (Redis store)", skip=!hasRedis(), body=function() {
+                var q = startRedisScheduler( [ countingJob( fail = true ) ], "file", {
+                    "releaseTriggersInterval": 1000,
+                    "heartbeatInterval": 1000,
+                    "clusterCheckinInterval": 15000
+                } );
+                try {
+                    assertManualFiresOnce( q, 2500 );
+                }
+                finally {
+                    try { q.getJobStore().clearAllSchedulingData(); } catch ( any e ) {}
+                }
+            } );
+        } );
     }
 
     // ---- helpers -----------------------------------------------------------
@@ -508,8 +562,8 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
     }
 
     // a scheduler with a Redis job store (the server from the environment, unique key prefix)
-    private function startRedisScheduler( required array jobs ) {
-        return startScheduler( {
+    private function startRedisScheduler( required array jobs, string primary = "", struct store = {} ) {
+        var data = {
             "jobs": arguments.jobs,
             "store": {
                 "type": "redis",
@@ -517,7 +571,146 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
                 "port": val( server.system.environment.REDIS_PORT ?: 6379 ),
                 "keyPrefix": "QT" & createUniqueId() & "_"
             }
-        } );
+        };
+        loop collection=arguments.store index="local.k" item="local.v" {
+            data.store[ k ] = v;
+        }
+        if ( len( arguments.primary ) ) data[ "primary" ] = arguments.primary;
+        return startScheduler( data );
+    }
+
+    /**
+     * Pause the DEFAULT trigger group through the job store (getScheduler() is package-scoped).
+     * triggerJob() stores its one-shot there; a paused group keeps that trigger from firing
+     * so the test can list it. Configured triggers use group "cfm".
+     */
+    private void function pauseDefaultTriggerGroup( required any q ) {
+        var loader       = arguments.q.getTriggers()[ 1 ].getClass().getClassLoader();
+        var matcherClass = loader.loadClass( "org.quartz.impl.matchers.GroupMatcher" );
+        var stringClass  = loader.loadClass( "java.lang.String" );
+        var matcher      = matcherClass.getMethod( "triggerGroupEquals", [ stringClass ] ).invoke( nullValue(), [ "DEFAULT" ] );
+        arguments.q.getJobStore().pauseTriggers( matcher );
+    }
+
+    // configured row keeps its schedule; the one-shot is listed as a manual run and never written to the config
+    private void function assertManualRunIgnored( required any q, required string scheduleType, required string schedule ) {
+        var name = hash( variables.COMP, "quick" );
+        pauseDefaultTriggerGroup( arguments.q );
+        arguments.q.triggerJob( name, "cfm" );
+
+        assertManualListing( arguments.q.getTriggersAsQuery( false ), name, arguments.scheduleType, arguments.schedule );
+        // QuartzUtil keeps its own copy of the listing/export helpers
+        assertManualListing(
+            org.lucee.extension.quartz.QuartzUtil::getTriggersAsQuery( arguments.q, false ),
+            name, arguments.scheduleType, arguments.schedule
+        );
+
+        expect( arguments.q.exportJobs().len() ).toBe( 1 );
+        expect( org.lucee.extension.quartz.QuartzUtil::exportJobs( arguments.q, false ).len() ).toBe( 1 );
+
+        // one-shot misfire must be RESCHEDULE_NEXT_WITH_EXISTING_COUNT, not smart (FIRE_NOW)
+        loop array=arguments.q.getTriggers() item="local.t" {
+            if ( left( t.getKey().getName(), 3 ) == "MT_" ) {
+                expect( t.getRepeatCount() ).toBe( 0 );
+                expect( t.getMisfireInstruction() ).toBe( misfireConstants( t ).SIMPLE_NEXT_EXISTING );
+            }
+        }
+
+        // pause rewrites the config from the scheduler (sync -> exportJobs) while the one-shot still exists
+        arguments.q.pauseJob( name, "cfm" );
+        var onDisk = deserializeJSON( fileRead( arguments.q.getConfigFile() ) );
+        expect( onDisk.jobs.len() ).toBe( 1 );
+        expect( arguments.q.getTriggers().len() ).toBe( 2 );
+
+        // put the one-shot last, which is the order that used to overwrite the configured trigger
+        var ordered = [];
+        var manual  = [];
+        loop array=arguments.q.getTriggers() item="local.t" {
+            if ( left( t.getKey().getName(), 3 ) == "MT_" ) arrayAppend( manual, t );
+            else arrayAppend( ordered, t );
+        }
+        expect( manual.len() ).toBe( 1 );
+        loop array=manual item="local.t" { arrayAppend( ordered, t ); }
+
+        var proxy    = createObject( "component", "QuartzLoadJobProxy" );
+        proxy.setTriggersForTest( ordered );
+        var existing = proxy.callGetExistingJobs();
+        expect( structKeyExists( existing, name ) ).toBeTrue();
+        expect( left( existing[ name ].trigger.getName(), 3 ) == "MT_" ).toBeFalse();
+
+        // loadConfig reconciles from the file and must not adopt the pending one-shot or write it out
+        var onDiskNow = deserializeJSON( fileRead( arguments.q.getConfigFile() ) );
+        onDiskNow[ "logName" ] = "scheduler-reload";
+        fileWrite( arguments.q.getConfigFile(), serializeJSON( onDiskNow ) );
+        arguments.q.loadConfig();
+        expect( deserializeJSON( fileRead( arguments.q.getConfigFile() ) ).jobs.len() ).toBe( 1 );
+        expect( arguments.q.getTriggers().len() ).toBe( 2 );
+        expect( arguments.q.exportJobs().len() ).toBe( 1 );
+    }
+
+    // the one-shot is removed when the run finishes, success or failure, and does not run again
+    private void function assertManualFiresOnce( required any q, numeric settle = 300 ) {
+        var name    = hash( "manual-count", "quick" );
+        var runFile = arguments.q.getJobs()[ 1 ].getJobDataMap()[ "runFile" ];
+        arguments.q.triggerJob( name, "cfm" );
+        waitForManualTriggerToFinish( arguments.q );
+        expect( val( fileRead( runFile ) ) ).toBe( 1 );
+        expect( countManualTriggers( arguments.q ) ).toBe( 0 );
+        expect( arguments.q.getTriggers().len() ).toBe( 1 );
+        // past releaseTriggersInterval when the caller shortened it; the one-shot must not run again
+        sleep( arguments.settle );
+        expect( val( fileRead( runFile ) ) ).toBe( 1 );
+        expect( countManualTriggers( arguments.q ) ).toBe( 0 );
+    }
+
+    private numeric function countManualTriggers( required any q ) {
+        var n = 0;
+        loop array=arguments.q.getTriggers() item="local.t" {
+            if ( left( t.getKey().getName(), 3 ) == "MT_" && t.getKey().getGroup() == "DEFAULT" ) n++;
+        }
+        return n;
+    }
+
+    private void function waitForManualTriggerToFinish( required any q ) {
+        loop from=1 to=50 index="local.i" {
+            if ( countManualTriggers( arguments.q ) == 0 ) return;
+            sleep( 100 );
+        }
+        expect( countManualTriggers( arguments.q ) ).toBe( 0 );
+    }
+
+    private struct function countingJob( boolean fail = false ) {
+        return {
+            "label": "count",
+            "slug": "manual-count",
+            "component": "org.lucee.extension.quartz.example.CountingJob",
+            "cron": "0 0 0 1 1 ? 2099",
+            "pause": false,
+            "stateful": true,
+            "runFile": getTempDirectory() & "quartz-manual-" & createUniqueId() & ".txt",
+            "fail": arguments.fail
+        };
+    }
+
+    private void function assertManualListing( required any qry, required string jobName, required string scheduleType, required string schedule ) {
+        var qry = arguments.qry;
+        expect( qry.recordCount ).toBe( 2 );
+        var seen = { "manual": false, "configured": false };
+        loop query=qry {
+            expect( qry.jobName ).toBe( arguments.jobName );
+            if ( qry.scheduleType == "manual" ) {
+                seen.manual = true;
+                expect( qry.schedule ).toBe( "pending manual run" );
+                expect( qry.scheduleTranslated ).toBe( "pending manual run" );
+            }
+            else {
+                seen.configured = true;
+                expect( qry.scheduleType ).toBe( arguments.scheduleType );
+                expect( qry.schedule & "" ).toBe( arguments.schedule );
+            }
+        }
+        expect( seen.manual ).toBeTrue();
+        expect( seen.configured ).toBeTrue();
     }
 
     // n far-future jobs, every third one paused, every second one a cron job (the others interval jobs)
@@ -661,7 +854,8 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
                 "CRON_DO_NOTHING" : readConst( cron,    "MISFIRE_INSTRUCTION_DO_NOTHING" ),
                 "CRON_FIRE_ONCE"  : readConst( cron,    "MISFIRE_INSTRUCTION_FIRE_ONCE_NOW" ),
                 "SIMPLE_FIRE_NOW" : readConst( simple,  "MISFIRE_INSTRUCTION_FIRE_NOW" ),
-                "SIMPLE_NEXT_REM" : readConst( simple,  "MISFIRE_INSTRUCTION_RESCHEDULE_NEXT_WITH_REMAINING_COUNT" )
+                "SIMPLE_NEXT_REM" : readConst( simple,  "MISFIRE_INSTRUCTION_RESCHEDULE_NEXT_WITH_REMAINING_COUNT" ),
+                "SIMPLE_NEXT_EXISTING" : readConst( simple, "MISFIRE_INSTRUCTION_RESCHEDULE_NEXT_WITH_EXISTING_COUNT" )
             };
         }
         return variables.mi;
