@@ -160,6 +160,11 @@ component extends="QuartzSupport" javaSettings='{
                 }
                 variables.factory = new StdSchedulerFactory(props);
                 variables.scheduler = variables.factory.getScheduler();
+                // before start(), so a manual run cannot finish without this listener in place.
+                // the scheduler listener removes an MT_* trigger that misfire completes without a run
+                var manualRun=new ManualRunListener(variables.scheduler, variables.logName);
+                variables.scheduler.getListenerManager().addJobListener(JavaCast("org.quartz.JobListener", manualRun));
+                variables.scheduler.getListenerManager().addSchedulerListener(JavaCast("org.quartz.SchedulerListener", manualRun));
 
                 // load listeners
                 if(!isNull(config.listeners)) {
@@ -448,7 +453,9 @@ component extends="QuartzSupport" javaSettings='{
         var existingJobs=[:];
         var existingTriggers=[:];
         loop array=getTriggers() item="local.trigger" {
-            // dump(trigger.getJobKey().getName());
+            // triggerJob() adds a one-shot (MT_* in DEFAULT) next to the configured trigger.
+            // Mapping the job to that one-shot makes the next reload treat the schedule as changed.
+            if(QuartzUtil::isManualTrigger(trigger)) continue;
             existingJobs[trigger.getJobKey().getName()]={
                 "job":trigger.getJobKey(),
                 "trigger":trigger.getKey()
@@ -771,8 +778,46 @@ component extends="QuartzSupport" javaSettings='{
         sync();
 	} 
 
+    /**
+     * Run the job once, now. Adds a one-shot SimpleTrigger (MT_* in group DEFAULT) beside the
+     * configured trigger. Listing reports it as a pending manual run until it fires. export/sync,
+     * getExistingJobs() and loadConfig() ignore it, so it is never the job's saved schedule.
+     *
+     * Not Scheduler.triggerJob(): that trigger keeps the smart misfire policy, and for a
+     * SimpleTrigger with repeatCount 0 smart means FIRE_NOW. quartz-redis-jobstore 1.2.0.1-RC
+     * and 2.0.0.0-RC both leave a stateful one-shot acquired (timesTriggered stays 0,
+     * nextFireTime stays set). releaseTriggersInterval (job store default 600000 ms, only
+     * passed through when store.releaseTriggersInterval is set) then returns it to waiting
+     * and FIRE_NOW runs it again. RESCHEDULE_NEXT_WITH_EXISTING_COUNT has no further fire
+     * once that original instant has passed. ManualRunListener also unschedules it when the
+     * run finishes, whether the job returns or throws.
+     */
     public function triggerJob(name,string group) {
-        actionOnJob("triggerJob",name,group?:nullValue());
+        var strName="";
+        if(isSimpleValue(name)) {
+            local.jk=new JobKey(name,group);
+            strName=name;
+        }
+        else {
+            local.jk=name;
+            try{strName=jk.getName();}catch(ex) {}
+        }
+        var sched=variables.scheduler;
+        if(isNull(sched)) throw "there is no scheduler initalized";
+        if(isNull(sched.getJobDetail(local.jk))) throw "there is no job [#strName#]";
+
+        // repeatCount 0 is a single fire. Next-with-existing-count does not invent another one.
+        var schedule=SimpleScheduleBuilder::simpleSchedule()
+            .withRepeatCount(0)
+            .withMisfireHandlingInstructionNextWithExistingCount();
+        var trig=TriggerBuilder::newTrigger()
+            .withIdentity("MT_" & createUUID(), "DEFAULT")
+            .forJob(local.jk)
+            .startNow()
+            .withSchedule(schedule)
+            .build();
+        sched.scheduleJob(trig);
+        log log=variables.logName type="debug" text="Quartz Scheduler: performing action [triggerJob] on job [#strName#]";
     }
 
     private function actionOnJob(string action,name,string group) {
@@ -857,10 +902,9 @@ component extends="QuartzSupport" javaSettings='{
         if(!isNull(variables.scheduler)) {
             var manager=variables.scheduler.getListenerManager();
             loop array=manager.getJobListeners() item="local.listener" {
-                if(!isNull(listener)) {
-                    if(asStruct)  listeners[listener.name]=listener;
-                    else arrayAppend(listeners, listener);
-                }
+                if(isNull(listener) || listener.getName()==ManualRunListener::listenerName()) continue;
+                if(asStruct)  listeners[listener.name]=listener;
+                else arrayAppend(listeners, listener);
             }
         }
         return listeners;
