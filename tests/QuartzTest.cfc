@@ -568,6 +568,71 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
                     try { q.getJobStore().clearAllSchedulingData(); } catch ( any e ) {}
                 }
             } );
+
+            it( "removes the manual trigger after a successful run", function() {
+                var q    = startScheduler( { "jobs": [ cronJob() ] } );
+                var name = hash( variables.COMP, "quick" );
+                q.triggerJob( name, "cfm" );
+
+                expect( waitUntilNoManualTrigger( q ) ).toBeTrue();
+                expect( q.getTriggers().len() ).toBe( 1 );
+                expect( q.getTriggers()[ 1 ].getKey().getGroup() ).toBe( "cfm" );
+                var qry = q.getTriggersAsQuery( false );
+                expect( qry.recordCount ).toBe( 1 );
+                expect( qry.scheduleType ).toBe( "cron" );
+                expect( q.exportJobs().len() ).toBe( 1 );
+                expect( deserializeJSON( fileRead( q.getConfigFile() ) ).jobs.len() ).toBe( 1 );
+            } );
+
+            it( "removes the manual trigger after a failing stateful run", function() {
+                var missing = "org.lucee.extension.quartz.example.DoesNotExist";
+                var q = startScheduler( { "jobs": [ {
+                    "label": "fail",
+                    "component": missing,
+                    "cron": "0 0 0 1 1 ? 2099",
+                    "pause": true,
+                    "stateful": true
+                } ] } );
+                q.triggerJob( hash( missing, "quick" ), "cfm" );
+
+                expect( waitUntilNoManualTrigger( q ) ).toBeTrue();
+                expect( countManualTriggers( q ) ).toBe( 0 );
+                expect( q.getTriggers().len() ).toBe( 1 );
+                var qry = q.getTriggersAsQuery( false );
+                expect( qry.recordCount ).toBe( 1 );
+                expect( qry.scheduleType ).toBe( "cron" );
+                expect( q.exportJobs().len() ).toBe( 1 );
+            } );
+
+            // releaseTriggersInterval is shorter than the wait, so an orphaned one-shot would be
+            // handed back and (inside the misfire threshold) fired again. It must stay gone.
+            it( title="a failing stateful manual run is not released again (Redis store)", skip=!hasRedis(), body=function() {
+                var missing = "org.lucee.extension.quartz.example.DoesNotExist";
+                var q = startRedisScheduler( [ {
+                    "label": "fail",
+                    "component": missing,
+                    "cron": "0 0 0 1 1 ? 2099",
+                    "pause": true,
+                    "stateful": true
+                } ], {
+                    "releaseTriggersInterval": 1000,
+                    "heartbeatInterval": 1000,
+                    "clusterCheckinInterval": 15000
+                } );
+                try {
+                    q.triggerJob( hash( missing, "quick" ), "cfm" );
+                    expect( waitUntilNoManualTrigger( q ) ).toBeTrue();
+                    sleep( 2500 );
+                    expect( countManualTriggers( q ) ).toBe( 0 );
+                    expect( q.getTriggers().len() ).toBe( 1 );
+                    expect( q.getTriggersAsQuery( false ).recordCount ).toBe( 1 );
+                    expect( q.exportJobs().len() ).toBe( 1 );
+                    expect( deserializeJSON( fileRead( q.getConfigFile() ) ).jobs.len() ).toBe( 1 );
+                }
+                finally {
+                    try { q.getJobStore().clearAllSchedulingData(); } catch ( any e ) {}
+                }
+            } );
         } );
     }
 
@@ -627,6 +692,18 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
         expect( seen ).toHaveKey( arguments.scheduleType );
         expect( seen[ arguments.scheduleType ] ).toBe( arguments.schedule );
 
+        // the held one-shot is a single fire, and a misfire must not schedule another
+        var manual = nullValue();
+        loop array=arguments.q.getTriggers() item="local.t" {
+            if ( org.lucee.extension.quartz.QuartzUtil::isManualTrigger( t ) ) {
+                manual = t;
+                break;
+            }
+        }
+        expect( isNull( manual ) ).toBeFalse();
+        expect( manual.getRepeatCount() ).toBe( 0 );
+        expect( manual.getMisfireInstruction() ).toBe( misfireConstants( manual ).SIMPLE_NEXT_EXISTING );
+
         expect( arguments.q.exportJobs().len() ).toBe( 1 );
         var util = org.lucee.extension.quartz.QuartzUtil::getTriggersAsQuery( arguments.q, false );
         expect( util.recordCount ).toBe( 2 );
@@ -637,9 +714,10 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
         return len( server.system.environment.REDIS_SERVER ?: "" ) > 0;
     }
 
-    // a scheduler with a Redis job store (the server from the environment, unique key prefix)
-    private function startRedisScheduler( required array jobs ) {
-        return startScheduler( {
+    // a scheduler with a Redis job store (the server from the environment, unique key prefix).
+    // store overrides are merged on top (releaseTriggersInterval and the intervals it depends on).
+    private function startRedisScheduler( required array jobs, struct store = {} ) {
+        var data = {
             "jobs": arguments.jobs,
             "store": {
                 "type": "redis",
@@ -647,7 +725,27 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
                 "port": val( server.system.environment.REDIS_PORT ?: 6379 ),
                 "keyPrefix": "QT" & createUniqueId() & "_"
             }
-        } );
+        };
+        structAppend( data.store, arguments.store, true );
+        return startScheduler( data );
+    }
+
+    private numeric function countManualTriggers( required any q ) {
+        var n = 0;
+        loop array=arguments.q.getTriggers() item="local.t" {
+            if ( org.lucee.extension.quartz.QuartzUtil::isManualTrigger( t ) ) n++;
+        }
+        return n;
+    }
+
+    // the one-shot fires on a scheduler thread; poll until the listener has removed it
+    private boolean function waitUntilNoManualTrigger( required any q, numeric timeoutMs = 5000 ) {
+        var started = getTickCount();
+        while ( getTickCount() - started < arguments.timeoutMs ) {
+            if ( countManualTriggers( arguments.q ) == 0 ) return true;
+            sleep( 50 );
+        }
+        return countManualTriggers( arguments.q ) == 0;
     }
 
     // n far-future jobs, every third one paused, every second one a cron job (the others interval jobs)
@@ -791,7 +889,9 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
                 "CRON_DO_NOTHING" : readConst( cron,    "MISFIRE_INSTRUCTION_DO_NOTHING" ),
                 "CRON_FIRE_ONCE"  : readConst( cron,    "MISFIRE_INSTRUCTION_FIRE_ONCE_NOW" ),
                 "SIMPLE_FIRE_NOW" : readConst( simple,  "MISFIRE_INSTRUCTION_FIRE_NOW" ),
-                "SIMPLE_NEXT_REM" : readConst( simple,  "MISFIRE_INSTRUCTION_RESCHEDULE_NEXT_WITH_REMAINING_COUNT" )
+                "SIMPLE_NEXT_REM" : readConst( simple,  "MISFIRE_INSTRUCTION_RESCHEDULE_NEXT_WITH_REMAINING_COUNT" ),
+                // one-shot from triggerJob(): no further fire once the original instant has passed
+                "SIMPLE_NEXT_EXISTING" : readConst( simple, "MISFIRE_INSTRUCTION_RESCHEDULE_NEXT_WITH_EXISTING_COUNT" )
             };
         }
         return variables.mi;
