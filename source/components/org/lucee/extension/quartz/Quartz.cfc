@@ -566,18 +566,21 @@ component extends="QuartzSupport" javaSettings='{
      * Used everywhere the extension builds or looks up a job key, so all places use the same name (LDEV-6582)
      */
     public static string function jobName(required struct jobData) {
-        if(len(trim(arguments.jobData.slug?:""))) return trim(arguments.jobData.slug);
-        if(len(trim(arguments.jobData.url?:""))) return trim(arguments.jobData.url);
-        return trim(arguments.jobData.component?:arguments.jobData.cfc?:"");
+        var name="";
+        if(len(trim(arguments.jobData.slug?:""))) name=trim(arguments.jobData.slug);
+        else if(len(trim(arguments.jobData.url?:""))) name=trim(arguments.jobData.url);
+        else name=trim(arguments.jobData.component?:arguments.jobData.cfc?:"");
+        // the Redis job store splits its keys on ":", so a name must not contain one
+        return replace(name, ":", "_", "all");
     }
 
     /**
-     * readable trigger name: the job name plus the schedule, "<job>:<cron>" or "<job>:interval:<seconds>" (LDEV-6582)
+     * readable trigger name: the job name plus the schedule, "<job> [<cron>]" or "<job> [every <seconds>s]" (no ":", see jobName()) (LDEV-6582)
      */
     public static string function triggerName(required struct jobData) {
         var name=static.jobName(arguments.jobData);
-        if(!isNull(arguments.jobData.interval)) return name&":interval:"&arguments.jobData.interval;
-        return name&":"&(arguments.jobData.cron?:"");
+        if(!isNull(arguments.jobData.interval)) return name&" [every "&arguments.jobData.interval&"s]";
+        return name&" ["&(arguments.jobData.cron?:"")&"]";
     }
 
     /**
