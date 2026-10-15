@@ -38,7 +38,7 @@ component extends="QuartzSupport" javaSettings='{
                 {
                     "groupId" : "org.lucee",
                     "artifactId" : "quartz-redis-jobstore",
-                    "version" : "2.0.0.0-RC"
+                    "version" : "2.0.0.1-RC"
                 }
             ]
         }' {
