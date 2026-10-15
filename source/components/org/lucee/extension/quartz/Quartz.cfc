@@ -71,9 +71,18 @@ component extends="QuartzSupport" javaSettings='{
 		_init(configFile, variables);
     }
 
+    /**
+     * returns the path as-is when it already points to an existing file or into an existing directory
+     * (absolute path), otherwise expands it (relative path, mapping, placeholder) (LDEV-6460)
+     */
+    public static string function resolvePath(required string path) {
+        if(fileExists(arguments.path) || directoryExists(getDirectoryFromPath(arguments.path))) return arguments.path;
+        return expandPath(arguments.path);
+    }
+
 	public static void function _init(string configFile, struct result) { 
         // load config
-        result.configFile=expandPath(arguments.configFile);
+        result.configFile=resolvePath(arguments.configFile);
         result.configUntranslated = deserializeJSON(fileRead(result.configFile));
         result.config = resolveEnvVar( result.configUntranslated);
         result.logName=result.config.logName?:"scheduler"; // TODO check if the log exist
