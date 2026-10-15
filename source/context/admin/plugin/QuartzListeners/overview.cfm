@@ -61,6 +61,15 @@
 		#lang.purpose#<br>
 		<b>#lang.listenerNotShared#</b>
 
+<!--- show the real gateway error (LDEV-6459) --->
+<cfset exceptionKey="expection"&(req.plugin?:"")>
+<cfif structKeyExists(session,exceptionKey)>
+	<cfoutput><div class="error">
+		<b>#session[exceptionKey].message#</b><br>
+		<cfif len(session[exceptionKey].detail?:"")>#markdownToHTML(session[exceptionKey].detail?:"")#</cfif>
+	</div></cfoutput>
+	<cfset structDelete(session,exceptionKey)>
+</cfif>
 <cfif isNull(quartz)>
 	<cfif state EQ "running">
 		<div class="error">Quartz cannot be loaded for unknown reasons, check the logs for details.</div>
