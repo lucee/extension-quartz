@@ -181,7 +181,7 @@ component {
     /** resolves name/slug and group of the arguments and makes sure the job exists */
     private struct function requireJob(required any q, required struct args) {
         var name = trim(args.name ?: "");
-        if (!len(name) && len(args.slug ?: "")) name = hash(args.slug, "quick");
+        if (!len(name) && len(args.slug ?: "")) name = trim(args.slug);
         if (!len(name)) throw "argument [name] or [slug] is required";
         var group = len(args.group ?: "") ? args.group : static.DEFAULT_GROUP;
         loop array=q.getJobs() item="local.job" {

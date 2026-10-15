@@ -329,13 +329,13 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
                 // filters
                 expect( tool( s, "quartz_listTriggers", { "state": "paused" } ).len() ).toBe( 2 );
                 expect( tool( s, "quartz_listTriggers", { "state": "normal" } ).len() ).toBe( 0 );
-                expect( tool( s, "quartz_listTriggers", { "name": hash( variables.COMP, "quick" ) } ).len() ).toBe( 1 );
+                expect( tool( s, "quartz_listTriggers", { "name": variables.COMP } ).len() ).toBe( 1 );
                 expect( tool( s, "quartz_listTriggers", { "group": "nothing" } ).len() ).toBe( 0 );
             } );
 
             it( "gets a job by name or slug", function() {
                 var s = toolServer( [ compJob() ] );
-                var name = hash( variables.COMP, "quick" );
+                var name = variables.COMP;
 
                 var job = tool( s, "quartz_getJob", { "name": name } );
                 expect( job.name ).toBe( name );
@@ -420,7 +420,7 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
 
             it( "executes a job immediately", function() {
                 var s = toolServer( [ compJob() ] );
-                var res = tool( s, "quartz_executeJob", { "name": hash( variables.COMP, "quick" ) } );
+                var res = tool( s, "quartz_executeJob", { "name": variables.COMP } );
                 expect( res.success ).toBeTrue();
                 expect( res.message ).toBe( "job triggered" );
             } );
@@ -428,7 +428,7 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
             it( "keeps the [mcp] settings when the scheduler writes its config", function() {
                 var s = toolServer( [ compJob() ], { "mcp": "read,write", "threadPoolCount": 3 } );
                 tool( s, "quartz_unpauseAll" );
-                tool( s, "quartz_pauseJob", { "name": hash( variables.COMP, "quick" ) } );
+                tool( s, "quartz_pauseJob", { "name": variables.COMP } );
                 var saved = deserializeJSON( fileRead( variables.instances[ 1 ].getConfigFile() ) );
                 expect( saved.mcp ).toBe( "read,write" );
                 expect( saved.threadPoolCount ).toBe( 3 );
