@@ -211,23 +211,19 @@ component extends="QuartzSupport" javaSettings='{
                             // create job ids from config
                             var configJobIds = {};
                             loop array=config.jobs item="local.jobData" {
-                                if(structKeyExists(jobData, "slug")) {
-                                    configJobIds[hash(jobData.slug, "quick")] = true;
-                                }
-                                else if(structKeyExists(jobData, "component")) {
-                                    configJobIds[hash(jobData.component, "quick")] = true;
-                                }
-                                else if(structKeyExists(jobData, "url")) {
-                                    configJobIds[hash(jobData.url, "quick")] = true;
-                                }
-                            }
+                            var configJobName=static.jobName(jobData);
+                            if(len(configJobName)) configJobIds[configJobName] = true;
+                        }
                             loop collection=existingJobs item="local.key" {
-                                if (!structKeyExists(configJobIds, key)) deleteJob(existingJobs[key].job);
+                                // delete on the scheduler directly: deleteJob() syncs the config file from the scheduler and would drop the jobs not loaded yet
+                            if (!structKeyExists(configJobIds, key)) variables.scheduler.deleteJob(existingJobs[key].job);
                             }
                         }
                         // update or add jobs
-                        loop array=config.jobs item="local.jobData" {
-                            try {
+                        var loadedJobNames=structNew("casesensitive");
+                    loop array=config.jobs item="local.jobData" {
+                        if(isDuplicateJob(jobData, loadedJobNames)) continue;
+                        try {
                                 loadJob(jobData,existingJobs);
                             }
                             catch(ex) {
@@ -370,24 +366,20 @@ component extends="QuartzSupport" javaSettings='{
                         // create job ids from config
                         var configJobIds = {};
                         loop array=variables.config.jobs item="local.jobData" {
-                            if(structKeyExists(jobData, "slug")) {
-                                configJobIds[hash(jobData.slug, "quick")] = true;
-                            }
-                            else if(structKeyExists(jobData, "component")) {
-                                configJobIds[hash(jobData.component, "quick")] = true;
-                            }
-                            else if(structKeyExists(jobData, "url")) {
-                                configJobIds[hash(jobData.url, "quick")] = true;
-                            }
+                            var configJobName=static.jobName(jobData);
+                            if(len(configJobName)) configJobIds[configJobName] = true;
                         }
                         loop collection=existingJobs item="local.key" {
-                            if (!structKeyExists(configJobIds, key)) deleteJob(existingJobs[key].job);
+                            // delete on the scheduler directly: deleteJob() syncs the config file from the scheduler and would drop the jobs not loaded yet
+                            if (!structKeyExists(configJobIds, key)) variables.scheduler.deleteJob(existingJobs[key].job);
                         }
                     }
                     // update or add jobs
+                    var loadedJobNames=structNew("casesensitive");
                     loop array=variables.config.jobs item="local.jobData" {
+                        if(isDuplicateJob(jobData, loadedJobNames)) continue;
                         try {
-                            loadJob(jobData,existingJobs);
+                                loadJob(jobData,existingJobs);
                         }
                         catch(ex) {
                             log log=variables.logName type="error" exception=ex;
@@ -569,19 +561,54 @@ component extends="QuartzSupport" javaSettings='{
     }
 
 
+    /**
+     * readable job name: the slug, falling back to the url or component; empty when the job has none of them.
+     * Used everywhere the extension builds or looks up a job key, so all places use the same name (LDEV-6582)
+     */
+    public static string function jobName(required struct jobData) {
+        if(len(trim(arguments.jobData.slug?:""))) return trim(arguments.jobData.slug);
+        if(len(trim(arguments.jobData.url?:""))) return trim(arguments.jobData.url);
+        return trim(arguments.jobData.component?:arguments.jobData.cfc?:"");
+    }
+
+    /**
+     * readable trigger name: the job name plus the schedule, "<job>:<cron>" or "<job>:interval:<seconds>" (LDEV-6582)
+     */
+    public static string function triggerName(required struct jobData) {
+        var name=static.jobName(arguments.jobData);
+        if(!isNull(arguments.jobData.interval)) return name&":interval:"&arguments.jobData.interval;
+        return name&":"&(arguments.jobData.cron?:"");
+    }
+
+    /**
+     * true when a job with the same name was already loaded from the config; logs an error naming both jobs,
+     * the first one is kept (LDEV-6582)
+     */
+    private boolean function isDuplicateJob(required struct jobData, required struct loadedJobNames) {
+        var name=static.jobName(arguments.jobData);
+        if(!len(name)) return false;
+        var label=arguments.jobData.label?:name;
+        if(structKeyExists(arguments.loadedJobNames, name)) {
+            log log=variables.logName type="error" text="Quartz Scheduler: job [#label#] has the same name [#name#] as job [#arguments.loadedJobNames[name]#], it is skipped and job [#arguments.loadedJobNames[name]#] is kept. Give one of them a different slug.";
+            return true;
+        }
+        arguments.loadedJobNames[name]=label;
+        return false;
+    }
+
     private function createJob(jobData) {
-        var jobName="";
+        var defaultLabel="";
         var ignores={};
         var isStateful = jobData.stateful ?: false;
         // URL Job
         if(!isNull(jobData.url)) {
             ignores["url"]="";
-            jobName=jobData.url;
+            defaultLabel=jobData.url;
             if(structKeyExists(jobData, "slug")) {
-                jobData.id=hash(jobData.slug,"quick");
+                jobData.id=static.jobName(jobData);
             }
             else {
-                jobData.id=hash(jobData.url,"quick");
+                jobData.id=static.jobName(jobData);
             }
              // TODO make better
             ignores["id"]="";
@@ -591,14 +618,14 @@ component extends="QuartzSupport" javaSettings='{
         }
         // Component Job
         else if(!isNull(jobData.component) || !isNull(jobData.cfc)){
-            jobName=jobData.component?:jobData.cfc;
+            defaultLabel=jobData.component?:jobData.cfc;
             ignores["component"]="";
             ignores["cfc"]="";
             if(structKeyExists(jobData, "slug")) {
-                jobData.id=hash(jobData.slug,"quick");
+                jobData.id=static.jobName(jobData);
             }
             else {
-                jobData.id=hash(jobData.component?:jobData.cfc,"quick"); 
+                jobData.id=static.jobName(jobData);
             }
             ignores["id"]="";
             var builder = JobBuilder::newJob(isStateful?static.clazzCFCSF:static.clazzCFC)
@@ -627,7 +654,7 @@ component extends="QuartzSupport" javaSettings='{
         ignores["label"]="";
         builder
             .usingJobData("log", variables.logName)
-            .usingJobData("label", jobData.label?:jobName);
+            .usingJobData("label", jobData.label?:defaultLabel);
 
         // we add all addional data we got to the job data
         loop struct=jobData index="local.k" item="local.v" {
@@ -661,7 +688,7 @@ component extends="QuartzSupport" javaSettings='{
                         // interval default keeps Quartz's smart policy unless overridden
                         applySimpleMisfirePolicy(simpleSchedule, resolveMisfirePolicy(jobData, "smart"));
                         builder
-                        .withIdentity(hash(jobData.id&":"&jobData.interval,"quick"), "cfm")
+                        .withIdentity(static.triggerName(jobData), "cfm")
                         .withSchedule(simpleSchedule);
                     }
         // shedule cron
@@ -670,7 +697,7 @@ component extends="QuartzSupport" javaSettings='{
                         // cron default "doNothing" (wait for next fire); Quartz's smart policy collapses missed cron fires and drops the rest. (LDEV-6468)
                         applyCronMisfirePolicy(cronSchedule, resolveMisfirePolicy(jobData, "doNothing"));
                         builder
-                        .withIdentity(hash(jobData.id&":"&jobData.cron,"quick"), "cfm")
+                        .withIdentity(static.triggerName(jobData), "cfm")
                         .withSchedule(cronSchedule);
                     }
                     else {
