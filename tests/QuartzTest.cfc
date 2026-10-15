@@ -150,7 +150,7 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
 
             it( "pauses, resumes and deletes a job", function() {
                 var q    = startScheduler( { "jobs": [ compJob( pause = true ) ] } );
-                var name = hash( variables.COMP, "quick" );
+                var name = variables.COMP;
 
                 // created paused
                 expect( q.exportJobs()[ 1 ].pause ).toBeTrue();
@@ -185,7 +185,7 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
             // pause, resume and delete rewrite the config file from the scheduler state
             it( "keeps the settings it does not manage when pause, resume and delete rewrite the config file", function() {
                 var q    = startScheduler( { "jobs": [ compJob( pause = true ) ], "threadPoolCount": 3, "misfirePolicy": "ignoreMisfires" } );
-                var name = hash( variables.COMP, "quick" );
+                var name = variables.COMP;
 
                 q.resumeJob( name, "cfm" );
                 assertSettingsKept( q );
@@ -245,7 +245,7 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
                 q.loadConfig();
 
                 expect( q.getJobs().len() ).toBe( 1 );
-                expect( q.getJobsAsStruct() ).toHaveKey( hash( variables.COMP, "quick" ) );
+                expect( q.getJobsAsStruct() ).toHaveKey( variables.COMP );
             } );
 
             it( "applies a changed pause state on reload", function() {
@@ -279,7 +279,7 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
                 var data = { "label": "orphan", "component": variables.COMP, "cron": "0 0 0 1 1 ? 2099", "pause": false };
                 // existingJobs claims the job exists (a trigger is present), but the mock
                 // returns null for getJobDetail() - the orphaned store-row case
-                var existing = { "#hash( variables.COMP, "quick" )#": { "job": "jobKey", "trigger": "triggerKey" } };
+                var existing = { "#variables.COMP#": { "job": "jobKey", "trigger": "triggerKey" } };
 
                 // must not throw on the null JobDetail; must fall through to scheduleJob()
                 proxy.callLoadJob( mock, data, existing );
@@ -594,7 +594,7 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
 
     // configured row keeps its schedule; the one-shot is listed as a manual run and never written to the config
     private void function assertManualRunIgnored( required any q, required string scheduleType, required string schedule ) {
-        var name = hash( variables.COMP, "quick" );
+        var name = variables.COMP;
         pauseDefaultTriggerGroup( arguments.q );
         arguments.q.triggerJob( name, "cfm" );
 
@@ -650,7 +650,7 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
 
     // the one-shot is removed when the run finishes, success or failure, and does not run again
     private void function assertManualFiresOnce( required any q, numeric settle = 300 ) {
-        var name    = hash( "manual-count", "quick" );
+        var name    = "manual-count";
         var runFile = arguments.q.getJobs()[ 1 ].getJobDataMap()[ "runFile" ];
         arguments.q.triggerJob( name, "cfm" );
         waitForManualTriggerToFinish( arguments.q );
