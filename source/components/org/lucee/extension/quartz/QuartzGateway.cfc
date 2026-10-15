@@ -96,7 +96,7 @@ component {
         var path=server.system.environment.QUARTZ_CONFIGFILE?:"";
         if(isEmpty(path)) {
             path=arguments.config.custom.configFile?:"{lucee-server}/quartz/config.json";
-            path=expandPath(path);
+            path=Quartz::resolvePath(path);
         }
         return path;
     }
