@@ -18,9 +18,9 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
 				] } );
 				var names = triggerNames( q );
 				expect( names ).toHaveKey( "nightly-cleanup" );
-				expect( names[ "nightly-cleanup" ] ).toBe( "nightly-cleanup:0 0 0 1 1 ? 2099" );
+				expect( names[ "nightly-cleanup" ] ).toBe( "nightly-cleanup [0 0 0 1 1 ? 2099]" );
 				expect( names ).toHaveKey( "ping" );
-				expect( names[ "ping" ] ).toBe( "ping:interval:3600" );
+				expect( names[ "ping" ] ).toBe( "ping [every 3600s]" );
 			} );
 
 			it( "falls back to the url or the component when there is no slug", function() {
@@ -31,7 +31,40 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
 				var names = triggerNames( q );
 				expect( names ).toHaveKey( variables.COMP );
 				expect( names ).toHaveKey( "/never.cfm" );
-				expect( names[ "/never.cfm" ] ).toBe( "/never.cfm:interval:3600" );
+				expect( names[ "/never.cfm" ] ).toBe( "/never.cfm [every 3600s]" );
+			} );
+
+			it( "uses no colon in job and trigger names", function() {
+				var q = startScheduler( { "jobs": [
+					{ "label": "abs", "url": "https://localhost/never.cfm", "cron": "0 0 0 1 1 ? 2099", "pause": true }
+				] } );
+				var names = triggerNames( q );
+				expect( names ).toHaveKey( "https_//localhost/never.cfm" );
+				expect( names[ "https_//localhost/never.cfm" ] ).notToInclude( ":" );
+			} );
+
+			it( title="loads the jobs with the Redis job store", skip=!hasRedis(), body=function() {
+				var q = startScheduler( {
+					"jobs": [
+						{ "label": "Nightly cleanup", "slug": "nightly-cleanup", "component": variables.COMP, "cron": "0 0 0 1 1 ? 2099", "pause": true },
+						{ "label": "abs", "url": "https://localhost/never.cfm", "interval": 3600, "startAt": "2099-01-01", "pause": true }
+					],
+					"store": {
+						"type": "redis",
+						"host": server.system.environment.REDIS_SERVER,
+						"port": val( server.system.environment.REDIS_PORT ?: 6379 ),
+						"keyPrefix": "QN" & createUniqueId() & "_"
+					}
+				} );
+				try {
+					var names = triggerNames( q );
+					expect( structCount( names ) ).toBe( 2 );
+					expect( names[ "nightly-cleanup" ] ).toBe( "nightly-cleanup [0 0 0 1 1 ? 2099]" );
+					expect( names[ "https_//localhost/never.cfm" ] ).toBe( "https_//localhost/never.cfm [every 3600s]" );
+				}
+				finally {
+					try { q.getJobStore().clearAllSchedulingData(); } catch ( any e ) {}
+				}
 			} );
 
 			it( "keeps the label in the job data", function() {
@@ -75,6 +108,10 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
 				expect( deserializeJSON( fileRead( q.getConfigFile() ) ).jobs.len() ).toBe( 1 );
 			} );
 		} );
+	}
+
+	private boolean function hasRedis() {
+		return len( server.system.environment.REDIS_SERVER ?: "" ) > 0;
 	}
 
 	// job name -> trigger name
