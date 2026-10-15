@@ -1,6 +1,15 @@
 component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
 
 	function run( testResults, testBox ) {
+		describe( "QuartzGateway component", function() {
+
+			it( "compiles and holds the complete DEFAULT_CONFIG (no stray quote ends the string early)", function() {
+				var cfg = org.lucee.extension.quartz.QuartzGateway::DEFAULT_CONFIG;
+				expect( cfg ).toInclude( '"jobs"' );
+				expect( trim( cfg ) ).toMatch( "\\}$" );
+			});
+		});
+
 		describe( "QuartzGateway config file resolution (LDEV-6460)", function() {
 
 			it( "resolves the config file from the gateway config", function() {

@@ -12,7 +12,7 @@ component {
                                                   //   cron: smart|doNothing|fireAndProceed|ignoreMisfires (default doNothing)
                                                   //   interval: smart|doNothing|fireNow|ignoreMisfires (default smart)
        Redis store recovery (optional, job store defaults if omitted):
-       "releaseTriggersInterval": 600000,         // how often a dead node's triggers are taken over.
+       "releaseTriggersInterval": 600000,         // how often the triggers of a dead node are taken over.
                                                   //   Left unset on purpose. A manual triggerJob() run repeating
                                                   //   about this often is the Redis store not completing a stateful
                                                   //   one-shot (see ManualRunListener), not a reason to lower this.
