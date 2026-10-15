@@ -81,12 +81,9 @@ component {
     // we do this cfc, because Lucee does not unload a component when updating the extension
 
 	public void function init(string id, struct config, component listener) { 
-        var path=server.system.environment.QUARTZ_CONFIGFILE?:"";
-        if(isEmpty(path)) {
-            path=config.custom.configFile?:"{lucee-server}/quartz/config.json";
-            path=expandPath(path);
-        }
-        variables.configFile=path;
+        variables.id=arguments.id?:"";
+        variables.config=arguments.config?:{};
+        variables.configFile=resolveConfigFile(variables.config);
         
         if(!fileExists(variables.configFile)) {
             // make sure parent directory exists
@@ -112,12 +109,30 @@ component {
             // pause the existing tasks, so they not run twice
             org.lucee.extension.quartz.ClassicMigrator::pauseTasks();
         }
-        variables.id=arguments.id?:"";
-        variables.config=arguments.config?:{};
 	}
 
+    /**
+     * resolves the config file from the environment or the gateway config.
+     * used by init() and as fallback when this instance did not run init() (LDEV-6460)
+     */
+    public static string function resolveConfigFile(struct config={}) {
+        var path=server.system.environment.QUARTZ_CONFIGFILE?:"";
+        if(isEmpty(path)) {
+            path=arguments.config.custom.configFile?:"{lucee-server}/quartz/config.json";
+            path=expandPath(path);
+        }
+        return path;
+    }
+
+    private string function getConfigFile() {
+        if(isNull(variables.configFile) || isEmpty(variables.configFile)) {
+            variables.configFile=resolveConfigFile(variables.config?:{});
+        }
+        return variables.configFile;
+    }
+
 	public void function start() {
-        variables.instance=new Quartz(variables.configFile);
+        variables.instance=new Quartz(getConfigFile());
         variables.instance.start();
 	}
 
@@ -147,7 +162,7 @@ component {
         if(!isNull(variables.instance)) 
         	return variables.instance.sendMessageInstance(data);
         else {
-            return Quartz::sendMessageStatic(variables.configFile,data);
+            return Quartz::sendMessageStatic(getConfigFile(),data);
         }
         
     

@@ -22,6 +22,7 @@ component extends="org.lucee.extension.quartz.QuartzPlugin" {
 	}
 
 	public function overview(struct lang, struct app, struct req) {
+		variables.state="undefined";
 		try {
 			variables.state=GatewayState(variables.gatewayName);
 			if("running"==variables.state) {
