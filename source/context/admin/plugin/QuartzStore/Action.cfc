@@ -45,6 +45,11 @@ component extends="org.lucee.extension.quartz.QuartzPlugin" {
 	}
 
 	public function overview(struct lang, struct app, struct req) {
+		// defaults, so the view can render (and show the error) when the gateway call fails
+		variables.state="undefined";
+		variables.storage="";
+		variables.storageLoaded={};
+		variables.hasStorage=false;
 		try {
 			variables.state=GatewayState(variables.gatewayName);
 		

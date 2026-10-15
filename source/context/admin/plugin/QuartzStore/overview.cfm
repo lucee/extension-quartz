@@ -61,18 +61,18 @@
 	
 	<p>#lang.purpose#</p>
 
-	<cfif hasStorage>	
+	<cfset exceptionKey="expection"&(req.plugin?:"")>
+	<cfif structKeyExists(session,exceptionKey) && !len(session[exceptionKey].dataType?:"")>
+		<div class="error">
+			<b>#session[exceptionKey].message#</b><br>
+			<cfif len(session[exceptionKey].detail?:"")>#markdownToHtml(session[exceptionKey].detail?:"")#</cfif>
+			<cfset structDelete(session,exceptionKey)>
+		</div>
+	</cfif>
+
+	<cfif hasStorage ?: false>
 		<h2>Modify your Storage</h2>
 		<p>#lang.modifyYourStorage#</p>
-		<cfset exceptionKey="expection"&(req.plugin?:"")>
-		<cfif structKeyExists(session,exceptionKey)>
-			<div class="error">
-				<b>#session[exceptionKey].message#</b><br>
-				<cfif len(session[exceptionKey].detail?:"")>#markdownToHtml(session[exceptionKey].detail?:"")#</cfif>
-		
-				<cfset structDelete(session,exceptionKey)>
-			</div>
-		</cfif>
 		<form  action="#action('update')#" method="post">
 			<table class="maintbl checkboxtbl">	
 			<tr>
@@ -103,7 +103,7 @@
 
 		<cfset exceptionKey="expection"&(req.plugin?:"")>
 		<cfloop struct="#variables.storages#" index="k" item="v">
-			<cfif hasStorage and k NEQ variables.storageLoaded.type><cfcontinue></cfif>
+			<cfif (hasStorage ?: false) and k NEQ variables.storageLoaded.type><cfcontinue></cfif>
 			<cfset title=lang[k&"Title"]>
 			
 			<cfif structKeyExists(session,exceptionKey) && (session[exceptionKey].dataType?:"") EQ k>
@@ -126,14 +126,14 @@
 			</tr>
 			<tr>
 				<td colspan="1">
-					<textarea class="schedule-textarea" name="newval">#hasStorage?storage:v#</textarea>
+					<textarea class="schedule-textarea" name="newval">#(hasStorage ?: false)?storage:v#</textarea>
 					<span class="comment">#lang.createYourStorageComment#</span>
 				</td>
 			</tr>
 			<tfoot>
 			<tr>
 				<td colspan="1">
-					<cfif hasStorage>
+					<cfif hasStorage ?: false>
 						<input class="b submit" type="submit" name="update" value="#replace(lang.btnUpdate,"{type}",title)#" />  
 						<input class="b submit" type="submit" name="delete" value="#replace(lang.btnDelete,"{type}",title)#" />  	
 					<cfelse>

@@ -69,16 +69,34 @@ component {
     // we do this cfc, because Lucee does not unload a component when updating the extension
 
 	public void function init(string id, struct config, component listener) { 
+        variables.id=arguments.id?:"";
+        variables.config=arguments.config?:{};
+        variables.configFile=resolveConfigFile(variables.config);
+        
+        ensureConfigFile(variables.configFile);
+	}
+
+    /**
+     * resolves the config file from the environment or the gateway config.
+     * used by init() and as fallback when this instance did not run init() (LDEV-6460)
+     */
+    public static string function resolveConfigFile(struct config={}) {
         var path=server.system.environment.QUARTZ_CONFIGFILE?:"";
         if(isEmpty(path)) {
-            path=config.custom.configFile?:"{lucee-server}/quartz/config.json";
+            path=arguments.config.custom.configFile?:"{lucee-server}/quartz/config.json";
             path=expandPath(path);
         }
-        variables.configFile=path;
-        
-        if(!fileExists(variables.configFile)) {
+        return path;
+    }
+
+    /**
+     * creates the config file when it does not exist yet (default config or tasks migrated from cfschedule).
+     * Quartz.cfc expands the path again, that only works when the file exists (LDEV-6460)
+     */
+    private static void function ensureConfigFile(required string configFile) {
+        if(!fileExists(arguments.configFile)) {
             // make sure parent directory exists
-            var dir=getDirectoryFromPath(variables.configFile);
+            var dir=getDirectoryFromPath(arguments.configFile);
             if(!directoryExists(dir)) {
                 directoryCreate(dir,true,true);
             }
@@ -96,16 +114,22 @@ component {
                     "store": {}
                 });
             }
-            fileWrite(variables.configFile, config);
+            fileWrite(arguments.configFile, config);
             // pause the existing tasks, so they not run twice
             org.lucee.extension.quartz.ClassicMigrator::pauseTasks();
         }
-        variables.id=arguments.id?:"";
-        variables.config=arguments.config?:{};
-	}
+    }
+
+    private string function getConfigFile() {
+        if(isNull(variables.configFile) || isEmpty(variables.configFile)) {
+            variables.configFile=resolveConfigFile(variables.config?:{});
+            ensureConfigFile(variables.configFile);
+        }
+        return variables.configFile;
+    }
 
 	public void function start() {
-        variables.instance=new Quartz(variables.configFile);
+        variables.instance=new Quartz(getConfigFile());
         variables.instance.start();
 	}
 
@@ -135,7 +159,7 @@ component {
         if(!isNull(variables.instance)) 
         	return variables.instance.sendMessageInstance(data);
         else {
-            return Quartz::sendMessageStatic(variables.configFile,data);
+            return Quartz::sendMessageStatic(getConfigFile(),data);
         }
         
     
