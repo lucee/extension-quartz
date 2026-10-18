@@ -20,13 +20,15 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
             it( "runs a scheduled component job and reports it to a CFC job listener", function() {
                 var events = tempFile();
                 var q = startScheduler( {
-                    "jobs": [ { "label": "every second", "component": variables.JOB, "interval": 1, "pause": false } ],
+                    "jobs": [ { "label": "every second", "slug": "classloader-probe-scheduled", "component": variables.JOB, "interval": 1, "pause": false } ],
                     "listeners": [ { "component": variables.LISTENER, "file": events, "name": "probe-scheduled" } ]
                 } );
                 expect( q.getJobs().len() ).toBe( 1, "the component job was not registered" );
                 expect( structKeyExists( q.getListeners( true ), "probe-scheduled" ) ).toBeTrue( "the CFC job listener was not registered" );
 
-                var jobName = hash( variables.JOB, "quick" );
+                // the job is named by its slug (LDEV-6582)
+                var jobName = "classloader-probe-scheduled";
+                expect( q.getJobs()[ 1 ].getKey().getName() ).toBe( jobName );
                 waitFor( events, "wasExecuted " & jobName );
                 expect( readEvents( events ) ).toInclude( "toBeExecuted " & jobName );
                 expect( readEvents( events ) ).notToInclude( "failed:" );
@@ -35,12 +37,13 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
             it( "runs a manually triggered component job and reports it to a CFC job listener", function() {
                 var events = tempFile();
                 var q = startScheduler( {
-                    "jobs": [ { "label": "manual", "component": variables.JOB, "cron": "0 0 0 1 1 ? 2099", "pause": true } ],
+                    "jobs": [ { "label": "manual", "slug": "classloader-probe-manual", "component": variables.JOB, "cron": "0 0 0 1 1 ? 2099", "pause": true } ],
                     "listeners": [ { "component": variables.LISTENER, "file": events, "name": "probe-manual" } ]
                 } );
                 expect( q.getJobs().len() ).toBe( 1, "the component job was not registered" );
 
-                var jobName = hash( variables.JOB, "quick" );
+                var jobName = "classloader-probe-manual";
+                expect( q.getJobs()[ 1 ].getKey().getName() ).toBe( jobName );
                 q.triggerJob( jobName, "cfm" );
                 waitFor( events, "wasExecuted " & jobName );
                 expect( readEvents( events ) ).notToInclude( "failed:" );
