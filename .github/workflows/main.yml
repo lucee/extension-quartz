@@ -22,7 +22,26 @@ jobs:
       version: ${{ steps.extract-version.outputs.VERSION }}
       release: ${{ steps.extract-version.outputs.RELEASE }}
       next_version: ${{ steps.extract-version.outputs.NEXT_VERSION }}
+      lucee_matrix: ${{ steps.lucee-matrix.outputs.MATRIX }}
+      publish: ${{ steps.publish.outputs.PUBLISH }}
     steps:
+      # Only pushes and manual runs on master/main, a version branch (1.0, 2.0, ...) or release/* may
+      # publish (deploy, s3) or commit (bump). Feature and PR branches only build and test.
+      - name: Decide whether this run may publish
+        id: publish
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+        run: |
+          PUBLISH=false
+          if [[ "$EVENT" == "push" || "$EVENT" == "workflow_dispatch" ]]; then
+            BRANCH="${REF#refs/heads/}"
+            if [[ "$REF" == refs/heads/* ]] && [[ "$BRANCH" == "master" || "$BRANCH" == "main" || "$BRANCH" =~ ^[0-9]+(\.[0-9]+)*$ || "$BRANCH" == release/* ]]; then
+              PUBLISH=true
+            fi
+          fi
+          echo "event=${EVENT} ref=${REF} publish=${PUBLISH}"
+          echo "PUBLISH=${PUBLISH}" >> "$GITHUB_OUTPUT"
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -72,31 +91,47 @@ jobs:
           echo "RELEASE=${RELEASE}" >> "$GITHUB_OUTPUT"
           echo "NEXT_VERSION=${NEXT_VERSION}" >> "$GITHUB_OUTPUT"
 
+      # Repository and organization variables are not passed to pull_request runs from forks, so
+      # vars.LUCEE_TEST_VERSIONS_7 is empty there and fromJSON('') fails the whole run before build-and-test starts.
+      # Use the variable when it is set, otherwise test the latest build of each Lucee line through
+      # a version query (script-runner resolves it), so fork PRs are tested too.
+      - name: Resolve Lucee test matrix
+        id: lucee-matrix
+        env:
+          TEST_VERSIONS: ${{ vars.LUCEE_TEST_VERSIONS_7 }}
+          FALLBACK_LINES: "7.0 7.1 8.0"
+        run: |
+          set -euo pipefail
+          if [[ -n "${TEST_VERSIONS// }" ]] && echo "$TEST_VERSIONS" | jq -e 'type == "array" and length > 0' > /dev/null; then
+            echo "Using vars.LUCEE_TEST_VERSIONS_7"
+            MATRIX=$(echo "$TEST_VERSIONS" | jq -c '.')
+          else
+            echo "::notice::vars.LUCEE_TEST_VERSIONS_7 is not available (fork pull request?), testing the latest build of: ${FALLBACK_LINES}"
+            MATRIX=$(printf '%s\n' $FALLBACK_LINES | jq -R -s -c 'split("\n") | map(select(length > 0)) | map({version: (. + "/all/light"), query: (. + "/all/light")})')
+          fi
+          # artifact names cannot contain "/", so give every entry a label
+          MATRIX=$(echo "$MATRIX" | jq -c 'map(. + {label: ((.version // .query) | gsub("[^A-Za-z0-9._-]"; "-"))})')
+          echo "Lucee test matrix: ${MATRIX}"
+          echo "MATRIX=${MATRIX}" >> "$GITHUB_OUTPUT"
+
       - name: Cache Lucee files
         uses: actions/cache@v4
         with:
           path: ~/work/_actions/lucee/script-runner/main/lucee-download-cache
           key: lucee-downloads
 
-      - name: Import GPG key
-        run: |
-          echo "$GPG_PRIVATE_KEY" | base64 --decode | gpg --batch --import
-        env:
-          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
-
   build-and-test:
     runs-on: ubuntu-latest
     needs: setup
     env:
       QUARTZ_ENV_VAR: not used
-      LUCEE_TEST_VERSIONS_7: ${{ vars.LUCEE_TEST_VERSIONS_7 }}
       # tests with the Redis job store (tests/QuartzTest.cfc) use this server; they are skipped if REDIS_SERVER is not set
       REDIS_SERVER: localhost
       REDIS_PORT: 6379
     strategy:
       fail-fast: false
       matrix:
-        lucee: ${{ fromJSON(vars.LUCEE_TEST_VERSIONS_7) }}
+        lucee: ${{ fromJSON(needs.setup.outputs.lucee_matrix) }}
     services:
       minio:
         image: fclairamb/minio-github-actions
@@ -148,7 +183,7 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: quartz-lex-${{ matrix.lucee.version }}
+          name: quartz-lex-${{ matrix.lucee.label }}
           path: |
             target/*.lex
             !target/*.lite.lex
@@ -180,7 +215,8 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     needs: [setup, build-and-test]
-    if: always() && needs.build-and-test.result == 'success'
+    # pull requests (often from forks) get no secrets, so they only build and test
+    if: always() && needs.build-and-test.result == 'success' && needs.setup.outputs.publish == 'true'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -271,7 +307,7 @@ jobs:
   # The called workflow warns and skips when those secrets are not available to this repo.
   s3:
     needs: [setup, deploy]
-    if: always() && needs.deploy.result == 'success' && !endsWith(needs.setup.outputs.version, '-ALPHA') && github.event_name != 'pull_request'
+    if: always() && needs.deploy.result == 'success' && !endsWith(needs.setup.outputs.version, '-ALPHA') && needs.setup.outputs.publish == 'true'
     uses: lucee/lucee/.github/workflows/extension-s3-upload.yml@7.1
     with:
       artifact-name: quartz-s3
@@ -286,6 +322,7 @@ jobs:
     needs: [setup, deploy, s3]
     if: >-
       always() && needs.deploy.result == 'success'
+      && needs.setup.outputs.publish == 'true'
       && (needs.s3.result == 'success' || needs.s3.result == 'skipped')
       && (needs.setup.outputs.release == 'true'
         || (github.event_name == 'push'
