@@ -203,6 +203,11 @@ component {
         var arr=[];
         loop array=triggers item="local.trigger" {
             if(isManualTrigger(trigger)) continue;
+            // a trigger without a JobDetail (orphan in the store) cannot be exported; skip it instead of failing the whole export (LDEV-6780)
+            if(!structKeyExists(jobs, trigger.getJobKey().getName())) {
+                log log=(quartz.getConfig().logName?:"scheduler") type="warn" text="Quartz Scheduler: trigger [#trigger.getKey().toString()#] has no job [#trigger.getJobKey().toString()#], skipped in export";
+                continue;
+            }
             var sct=[:];
             arrayAppend(arr, sct);
             var job=jobs[trigger.getJobKey().getName()];
