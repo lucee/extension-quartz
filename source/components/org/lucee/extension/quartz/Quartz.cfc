@@ -208,12 +208,20 @@ component extends="QuartzSupport" javaSettings='{
                 }
                 variables.scheduler.start();
                 variables.state="running";
-                sync(true);
             }
             catch(e) {
                 log log=variables.logName type="error" exception=e;
                 variables.state="failed";
                 rethrow;
+            }
+            // The scheduler is running now. Writing the config file back is housekeeping: when it fails
+            // (for example a trigger in the store without a JobDetail) the scheduler stays running, a failed
+            // state would block getInstance(), the watcher and the listings of a scheduler that is firing jobs. (LDEV-6780)
+            try {
+                sync(true);
+            }
+            catch(e) {
+                log log=variables.logName type="error" text="Quartz Scheduler: started, but the config file could not be synchronized: #e.message#" exception=e;
             }
         }
 
@@ -553,7 +561,13 @@ component extends="QuartzSupport" javaSettings='{
      */
     public static string function triggerName(required struct jobData) {
         var name=static.jobName(arguments.jobData);
-        if(!isNull(arguments.jobData.interval)) return name&" [every "&arguments.jobData.interval&"s]";
+        if(!isNull(arguments.jobData.interval)) {
+            // "36000" and "36000.0" are the same schedule and must give the same name: the job store hands
+            // the interval back as a string like "36000.0", a different name would reschedule the job on every reload. (LDEV-6780)
+            var interval=arguments.jobData.interval;
+            if(isNumeric(interval) && val(interval)==int(val(interval))) interval=int(val(interval));
+            return name&" [every "&interval&"s]";
+        }
         return name&" ["&(arguments.jobData.cron?:"")&"]";
     }
 
