@@ -491,9 +491,11 @@ component extends="QuartzSupport" javaSettings='{
 
     private function loadJob(struct data, existingJobs) {
         if(isNull(existingJobs)) existingJobs = getExistingJobs();
-        
+        var pause=data.pause?:false;
+
         var job=createJob(data);
-        var trigger=createTrigger(data);
+        // a paused job's trigger is created in its own paused trigger group, see scheduleTrigger() (LDEV-6785)
+        var trigger=createTrigger(data, pause?pausedTriggerGroup(job.getKey().getName()):"cfm");
         
         // job exists?
         if(structKeyExists(existingJobs, job.name)) {
@@ -504,7 +506,7 @@ component extends="QuartzSupport" javaSettings='{
             // A trigger can exist without a matching JobDetail - e.g. an orphaned row in the
             // Redis/JDBC store, or a null trigger key. The job is then not really loaded, so we
             // must not read jobDetail. Remove the stale key(s) directly (our own deleteJob()
-            // reads the JobDetail that is missing here) and fall through to scheduleJob().
+            // reads the JobDetail that is missing here) and fall through to scheduleTrigger().
             if(isNull(jobDetail) || isNull(existingTriggerKey)) {
                 if(!isNull(existingTriggerKey)) variables.scheduler.unscheduleJob(existingTriggerKey);
                 variables.scheduler.deleteJob(jobKey);
@@ -513,8 +515,9 @@ component extends="QuartzSupport" javaSettings='{
                 // Update the job and its configured trigger in place. deleteJob() would also
                 // remove a pending MT_* one-shot, and the schedule below would not put it back.
                 var dataChanged=!isJobDataMapEqual(jobDetail.getJobDataMap(),job.getJobDataMap());
-                var triggerChanged=existingTriggerKey.getName()!=trigger.getKey().getName()
-                    || existingTriggerKey.getGroup()!=trigger.getKey().getGroup();
+                // the trigger name holds the schedule. The trigger group follows "pause", which is the state:
+                // changeState() applies it without storing the trigger again (LDEV-6785)
+                var triggerChanged=existingTriggerKey.getName()!=trigger.getKey().getName();
                 // 3-arg addJob stores a non-durable job. The 2-arg form rejects it
                 // ("Jobs added with no trigger must be durable") and the reload would stop
                 // before the pause/resume below.
@@ -525,10 +528,9 @@ component extends="QuartzSupport" javaSettings='{
                     // Replace the trigger, do not unschedule + schedule: unscheduleJob() removes the last trigger
                     // of a non-durable job together with the job itself, and the new trigger would then be stored
                     // without a JobDetail (an orphan in the Redis store). (LDEV-6780)
-                    if(isNull(variables.scheduler.rescheduleJob(existingTriggerKey, trigger)))
-                        variables.scheduler.scheduleJob(trigger);
+                    scheduleTrigger(nullValue(), trigger, pause, existingTriggerKey);
                 }
-                changeState(data.pause?:false, job.getKey(), trigger.getKey());
+                changeState(pause, job.getKey(), triggerChanged?trigger.getKey():existingTriggerKey);
                 if(dataChanged || triggerChanged)
                     log log=variables.logName type="debug" text="Quartz Scheduler: updated job [#data.label#] with schedule [#data.cron?:("every "&data.interval&" second(s)")#]";
                 return;
@@ -539,27 +541,61 @@ component extends="QuartzSupport" javaSettings='{
         else if(!isNull(variables.scheduler.getJobDetail(job.getKey()))) {
             trigger.setJobKey(job.getKey());
             variables.scheduler.addJob(job, true, true);
-            variables.scheduler.scheduleJob(trigger);
-            if(data.pause?:false) {
-                scheduler.pauseTrigger(trigger.getKey());
-                scheduler.pauseJob(job.getKey());
-            }
+            scheduleTrigger(nullValue(), trigger, pause);
             log log=variables.logName type="debug" text="Quartz Scheduler: loaded job [#data.label#] with schedule [#data.cron?:("every "&data.interval&" second(s)")#]";
             return;
         }
 
-        variables.scheduler.scheduleJob(job, trigger);
+        scheduleTrigger(job, trigger, pause);
         // dump("------ add "&job.name&" ------");
-        // change state of new jobs
-        if(data.pause?:false) {
-            scheduler.pauseTrigger(trigger.getKey());
-            scheduler.pauseJob(job.getKey());
-        }
         log log=variables.logName type="debug" text="Quartz Scheduler: loaded job [#data.label#] with schedule [#data.cron?:("every "&data.interval&" second(s)")#]";
 	} 
 
-    
-    
+    /**
+     * Stores a trigger: with its job, for the job already stored (job null) or in place of the trigger "replaceKey".
+     * A paused job's trigger is in its own trigger group (pausedTriggerGroup()), which is paused before the trigger
+     * is stored: the job stores store a trigger of a paused group as paused. Storing the trigger first and pausing
+     * it afterwards leaves a gap in which the scheduler thread of this or of any other node on the same store can
+     * acquire the runnable trigger and fire the paused job. (LDEV-6785)
+     */
+    private function scheduleTrigger(job, trigger, boolean pause, replaceKey) {
+        var sched=variables.scheduler;
+        if(pause) sched.pauseTriggers(GroupMatcher::triggerGroupEquals(trigger.getKey().getGroup()));
+        if(!isNull(arguments.replaceKey)) {
+            if(isNull(sched.rescheduleJob(arguments.replaceKey, trigger))) sched.scheduleJob(trigger);
+        }
+        else if(isNull(arguments.job)) sched.scheduleJob(trigger);
+        else sched.scheduleJob(arguments.job, trigger);
+        // for a job store that does not store a trigger of a paused group as paused
+        if(pause && "PAUSED"!=sched.getTriggerState(trigger.getKey()).name()) sched.pauseTrigger(trigger.getKey());
+    }
+
+    /**
+     * the trigger group of a paused job, see scheduleTrigger() (LDEV-6785)
+     */
+    private string function pausedTriggerGroup(required string jobName) {
+        return "cfm-paused-"&arguments.jobName;
+    }
+
+    private boolean function isPausedTriggerGroup(required string group) {
+        return left(arguments.group, 11)=="cfm-paused-";
+    }
+
+    /**
+     * Moves the triggers of a job that is resumed out of their paused trigger group (scheduleTrigger()) to "cfm".
+     * Left in the paused group, a job store that stores the trigger again (misfire handling does) would pause it again. (LDEV-6785)
+     */
+    private void function releasePausedTriggers(jobKey) {
+        var sched=variables.scheduler;
+        for(var trigger in sched.getTriggersOfJob(arguments.jobKey)) {
+            var key=trigger.getKey();
+            if(!isPausedTriggerGroup(key.getGroup())) continue;
+            sched.rescheduleJob(key, trigger.getTriggerBuilder().withIdentity(key.getName(), "cfm").build());
+            // the group is empty now, drop its paused flag
+            sched.resumeTriggers(GroupMatcher::triggerGroupEquals(key.getGroup()));
+        }
+    }
+
     private function changeState(pause, job,trigger) {
         var state=getScheduler().getTriggerState(trigger);
         if(pause) {
@@ -567,6 +603,8 @@ component extends="QuartzSupport" javaSettings='{
         }
         else {
             if("PAUSED"==state.name()) resumeJob(job);
+            // running, but still in its paused trigger group: resumed in the store, not through resumeJob()/resumeAllJobs()
+            else releasePausedTriggers(job);
         }
     }
 
@@ -683,7 +721,7 @@ component extends="QuartzSupport" javaSettings='{
         return builder.build();                        
     }
 
-    private function createTrigger(jobData) {
+    private function createTrigger(jobData, string group="cfm") {
 
                     // define trigger
         var builder=TriggerBuilder::newTrigger();
@@ -707,7 +745,7 @@ component extends="QuartzSupport" javaSettings='{
                         // interval default keeps Quartz's smart policy unless overridden
                         applySimpleMisfirePolicy(simpleSchedule, resolveMisfirePolicy(jobData, "smart"));
                         builder
-                        .withIdentity(static.triggerName(jobData), "cfm")
+                        .withIdentity(static.triggerName(jobData), arguments.group)
                         .withSchedule(simpleSchedule);
                     }
         // shedule cron
@@ -716,7 +754,7 @@ component extends="QuartzSupport" javaSettings='{
                         // cron default "doNothing" (wait for next fire); Quartz's smart policy collapses missed cron fires and drops the rest. (LDEV-6468)
                         applyCronMisfirePolicy(cronSchedule, resolveMisfirePolicy(jobData, "doNothing"));
                         builder
-                        .withIdentity(static.triggerName(jobData), "cfm")
+                        .withIdentity(static.triggerName(jobData), arguments.group)
                         .withSchedule(cronSchedule);
                     }
                     else {
@@ -824,6 +862,11 @@ component extends="QuartzSupport" javaSettings='{
 	} 
 
     public function resumeJob(name,string group) {
+        if(!isNull(variables.scheduler)) {
+            if(isSimpleValue(name)) local.jk=new JobKey(name,arguments.group?:"DEFAULT");
+            else local.jk=name;
+            releasePausedTriggers(local.jk);
+        }
         actionOnJob("resumeJob",name,group?:nullValue());
         sync();
 	} 
@@ -920,6 +963,13 @@ component extends="QuartzSupport" javaSettings='{
     public string function resumeAllJobs() {
         var sched=variables.scheduler;
         if(isNull(sched)) throw "there is no scheduler initalized";
+        var jobKeys=[:];
+        loop array=getTriggers() item="local.trigger" {
+            if(isPausedTriggerGroup(trigger.getKey().getGroup())) jobKeys[trigger.getJobKey().toString()]=trigger.getJobKey();
+        }
+        loop collection=jobKeys index="local.name" item="local.jobKey" {
+            releasePausedTriggers(jobKey);
+        }
         sched.resumeAll();
 	}
 
