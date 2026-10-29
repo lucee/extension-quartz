@@ -576,7 +576,8 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
 
                 expect( waitUntilNoManualTrigger( q ) ).toBeTrue();
                 expect( q.getTriggers().len() ).toBe( 1 );
-                expect( q.getTriggers()[ 1 ].getKey().getGroup() ).toBe( "cfm" );
+                // the configured trigger is left; cronJob() is paused, so it is in the job's paused trigger group (LDEV-6785)
+                expect( q.getTriggers()[ 1 ].getKey().getGroup() ).toBe( "cfm-paused-" & name );
                 var qry = q.getTriggersAsQuery( false );
                 expect( qry.recordCount ).toBe( 1 );
                 expect( qry.scheduleType ).toBe( "cron" );
@@ -662,7 +663,7 @@ component extends="org.lucee.cfml.test.LuceeTestCase" labels="quartz" {
 
     // the one-shot from triggerJob() is created in the DEFAULT group; pausing that group
     // stores it paused so the scheduler does not fire it before the assertions run.
-    // configured triggers live in group "cfm" and are left alone.
+    // configured triggers live in group "cfm" ("cfm-paused-<job name>" for a paused job) and are left alone.
     private void function pauseDefaultTriggerGroup( required any q ) {
         // Quartz is in the extension bundle, so the matcher class is loaded from a live trigger
         var loader       = arguments.q.getTriggers()[ 1 ].getClass().getClassLoader();
