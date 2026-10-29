@@ -383,12 +383,18 @@ abstract component {
         return meta;
 	}
 
-    public static function isJobDataMapEqual(left, right) {
-        if(len(left)!=len(right)) return false;
-
+    /**
+     * true when both job data maps have the same keys and values; the keys in the list "ignore" are not compared
+     */
+    public static function isJobDataMapEqual(left, right, string ignore="") {
         loop collection=left index="local.k" item="local.v" {
+            if(listFindNoCase(arguments.ignore, k)) continue;
             if(!structKeyExists(right, k)) return false;
             if(v!=right[k]) return false;
+        }
+        loop collection=right index="local.k" item="local.v" {
+            if(listFindNoCase(arguments.ignore, k)) continue;
+            if(!structKeyExists(left, k)) return false;
         }
         return true;
     }
